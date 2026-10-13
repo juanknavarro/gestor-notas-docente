@@ -171,3 +171,56 @@ export function calcularProyeccionCorte3(
     corte2Presente,
   };
 }
+
+export interface DefinitivaAsignatura {
+  notaFinal: number; // Redondeada a 1 decimal (escala 0.0 - 5.0)
+  notaFinalExacta: number; // Valor con precisión flotante
+  aporteC1: number; // (Definitiva_C1 * peso1 / 100)
+  aporteC2: number; // (Definitiva_C2 * peso2 / 100)
+  aporteC3: number; // (Definitiva_C3 * peso3 / 100)
+  aprobado: boolean; // true si notaFinal >= 3.0
+  categoria: CategoriaDesempeno; // "Bajo" | "Aceptable" | "Competente" | "Excelente"
+  corte1Presente: boolean;
+  corte2Presente: boolean;
+  corte3Presente: boolean;
+}
+
+/**
+ * Calcula la calificación definitiva semestral al 100% de la asignatura:
+ * Nota_Final = (Definitiva_C1 * 0.35) + (Definitiva_C2 * 0.35) + (Definitiva_C3 * 0.30)
+ * Aplica tope máximo de 5.0 y categorización de aprendizaje institucional.
+ */
+export function calcularDefinitivaAsignatura(
+  defC1: number | null,
+  defC2: number | null,
+  defC3: number | null,
+  peso1: number = 35,
+  peso2: number = 35,
+  peso3: number = 30
+): DefinitivaAsignatura {
+  const c1 = defC1 ?? 0;
+  const c2 = defC2 ?? 0;
+  const c3 = defC3 ?? 0;
+
+  const aporteC1 = Number(((c1 * peso1) / 100).toFixed(3));
+  const aporteC2 = Number(((c2 * peso2) / 100).toFixed(3));
+  const aporteC3 = Number(((c3 * peso3) / 100).toFixed(3));
+
+  const suma = aporteC1 + aporteC2 + aporteC3;
+  const notaFinalExacta = Math.min(suma, 5.0);
+  const notaFinal = Number(Math.min(suma, 5.0).toFixed(1));
+
+  return {
+    notaFinal,
+    notaFinalExacta,
+    aporteC1,
+    aporteC2,
+    aporteC3,
+    aprobado: notaFinal >= 3.0,
+    categoria: clasificarResultadoAprendizaje(notaFinal),
+    corte1Presente: defC1 !== null,
+    corte2Presente: defC2 !== null,
+    corte3Presente: defC3 !== null,
+  };
+}
+

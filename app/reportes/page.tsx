@@ -258,7 +258,7 @@ export default function ReportesPage() {
               ) : (
                 asignaturas.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.nombre} — {a.programa}
+                    {a.nombre} {a.numeroClase ? `(Clase ${a.numeroClase})` : ""} — {a.programa}
                   </option>
                 ))
               )}

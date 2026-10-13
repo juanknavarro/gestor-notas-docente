@@ -7,6 +7,8 @@ import {
   calcularDefinitivaCorte,
   calcularProyeccionCorte3,
   type ProyeccionCorte3,
+  calcularDefinitivaAsignatura,
+  type DefinitivaAsignatura,
 } from "@/lib/calculos";
 import {
   UserCheck,
@@ -27,6 +29,7 @@ import {
   Save,
   PanelLeftClose,
   PanelLeft,
+  GraduationCap,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -36,7 +39,10 @@ interface EstudianteSocializacionData {
   nombreCompleto: string;
   definitivaActual: number | null;
   definitivaC1: number | null;
+  definitivaC2: number | null;
+  definitivaC3: number | null;
   proyeccionC3: ProyeccionCorte3 | null;
+  definitivaSemestral: DefinitivaAsignatura | null;
   socializacion?: Socializacion;
   estaSocializado: boolean;
   anotacion: string;
@@ -105,6 +111,8 @@ export default function SocializacionPage() {
 
     const corteActual = cortes.find((c) => c.numeroCorte === selectedNumeroCorte);
     const corte1 = cortes.find((c) => c.numeroCorte === 1);
+    const corte2 = cortes.find((c) => c.numeroCorte === 2);
+    const corte3 = cortes.find((c) => c.numeroCorte === 3);
 
     const corteIds = cortes.map((c) => c.id!).filter(Boolean);
 
@@ -133,6 +141,8 @@ export default function SocializacionPage() {
       cortes,
       corteActual,
       corte1,
+      corte2,
+      corte3,
       actividades,
       notas,
       socializaciones,
@@ -140,13 +150,15 @@ export default function SocializacionPage() {
   }, [selectedAsignaturaId, selectedNumeroCorte]);
 
   // 3. Procesamiento en memoria de notas y estados de socialización
-  const { listaEstudiantes, corteActual, corte1, actividadesActuales, notasMap } =
+  const { listaEstudiantes, corteActual, corte1, corte2, corte3, actividadesActuales, notasMap } =
     useMemo(() => {
       if (!datosCorte) {
         return {
           listaEstudiantes: [],
           corteActual: null,
           corte1: null,
+          corte2: null,
+          corte3: null,
           actividadesActuales: [],
           notasMap: new Map<string, number>(),
         };
@@ -156,6 +168,8 @@ export default function SocializacionPage() {
         estudiantes,
         corteActual,
         corte1,
+        corte2,
+        corte3,
         actividades,
         notas,
         socializaciones,
@@ -167,6 +181,14 @@ export default function SocializacionPage() {
 
       const actCorte1 = corte1?.id
         ? actividades.filter((a) => a.corteId === corte1.id)
+        : [];
+
+      const actCorte2 = corte2?.id
+        ? actividades.filter((a) => a.corteId === corte2.id)
+        : [];
+
+      const actCorte3 = corte3?.id
+        ? actividades.filter((a) => a.corteId === corte3.id)
         : [];
 
       // Mapa rápido de notas: `${estudianteId}_${actividadId}` -> valor
@@ -183,6 +205,8 @@ export default function SocializacionPage() {
 
       const pesoActual = corteActual?.porcentaje ?? (selectedNumeroCorte === 3 ? 30 : 35);
       const pesoC1 = corte1?.porcentaje ?? 35;
+      const pesoC2 = corte2?.porcentaje ?? 35;
+      const pesoC3 = corte3?.porcentaje ?? 30;
 
       const procesados: EstudianteSocializacionData[] = estudiantes.map((est) => {
         const defActual = calcularDefinitivaCorte(est.id!, actActuales, nMap, pesoActual);
@@ -190,12 +214,31 @@ export default function SocializacionPage() {
         const estaSocializado = soc?.estado === "socializado";
 
         let defC1: number | null = null;
+        let defC2: number | null = null;
+        let defC3: number | null = null;
         let proyC3: ProyeccionCorte3 | null = null;
+        let definitivaSemestral: DefinitivaAsignatura | null = null;
 
         // Regla de negocio: Si el corte seleccionado es el 2, calcular la proyección con Corte 1
         if (selectedNumeroCorte === 2) {
           defC1 = calcularDefinitivaCorte(est.id!, actCorte1, nMap, pesoC1);
+          defC2 = defActual;
           proyC3 = calcularProyeccionCorte3(defC1, defActual);
+        }
+
+        // Regla de negocio: Si el corte seleccionado es el 3, calcular el 100% de la asignatura
+        if (selectedNumeroCorte === 3) {
+          defC1 = calcularDefinitivaCorte(est.id!, actCorte1, nMap, pesoC1);
+          defC2 = calcularDefinitivaCorte(est.id!, actCorte2, nMap, pesoC2);
+          defC3 = defActual;
+          definitivaSemestral = calcularDefinitivaAsignatura(
+            defC1,
+            defC2,
+            defC3,
+            pesoC1,
+            pesoC2,
+            pesoC3
+          );
         }
 
         return {
@@ -204,7 +247,10 @@ export default function SocializacionPage() {
           nombreCompleto: est.nombreCompleto,
           definitivaActual: defActual,
           definitivaC1: defC1,
+          definitivaC2: defC2,
+          definitivaC3: defC3,
           proyeccionC3: proyC3,
+          definitivaSemestral,
           socializacion: soc,
           estaSocializado,
           anotacion: soc?.anotacion ?? "",
@@ -215,6 +261,8 @@ export default function SocializacionPage() {
         listaEstudiantes: procesados,
         corteActual,
         corte1,
+        corte2,
+        corte3,
         actividadesActuales: actActuales,
         notasMap: nMap,
       };
@@ -430,7 +478,7 @@ export default function SocializacionPage() {
               ) : (
                 asignaturas.map((a) => (
                   <option key={a.id} value={a.id}>
-                    {a.nombre} — {a.programa}
+                    {a.nombre} {a.numeroClase ? `(Clase ${a.numeroClase})` : ""} — {a.programa}
                   </option>
                 ))
               )}
@@ -927,6 +975,130 @@ export default function SocializacionPage() {
                         <p className="text-[11px] font-medium text-amber-800 dark:text-amber-300 mt-0.5">
                           {estudianteSeleccionado.proyeccionC3.mensaje}
                         </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* REGLA DEL CORTE 3: Nota Definitiva de la Asignatura (100%) */}
+                {selectedNumeroCorte === 3 && estudianteSeleccionado.definitivaSemestral && (
+                  <div className="p-5 rounded-xl bg-linear-to-br from-zinc-50 to-zinc-100/60 border border-zinc-200/90 dark:from-zinc-900/90 dark:to-zinc-950 dark:border-zinc-800 space-y-4 shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-zinc-200/80 dark:border-zinc-800 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="p-2 rounded-lg bg-zinc-900 text-white dark:bg-white dark:text-zinc-900 shrink-0">
+                          <GraduationCap className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-sm text-zinc-900 dark:text-zinc-100">
+                            Nota Definitiva de la Asignatura (100%)
+                          </h4>
+                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                            Cómputo institucional: C1 (35%) + C2 (35%) + C3 (30%)
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {/* Badge de Categoría Institucional */}
+                        <span
+                          className={`font-mono text-[11px] px-2.5 py-1 rounded-full font-semibold border ${
+                            estudianteSeleccionado.definitivaSemestral.categoria === "Excelente"
+                              ? "bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800"
+                              : estudianteSeleccionado.definitivaSemestral.categoria === "Competente"
+                              ? "bg-sky-50 text-sky-800 border-sky-200 dark:bg-sky-950/60 dark:text-sky-300 dark:border-sky-800"
+                              : estudianteSeleccionado.definitivaSemestral.categoria === "Aceptable"
+                              ? "bg-amber-50 text-amber-800 border-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:border-amber-800"
+                              : "bg-rose-50 text-rose-800 border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800"
+                          }`}
+                        >
+                          {estudianteSeleccionado.definitivaSemestral.categoria}
+                        </span>
+
+                        {/* Badge Aprobado / Reprobado */}
+                        <span
+                          className={`text-[11px] px-2.5 py-1 rounded-full font-semibold border ${
+                            estudianteSeleccionado.definitivaSemestral.aprobado
+                              ? "bg-emerald-100/80 text-emerald-900 border-emerald-300 dark:bg-emerald-900/50 dark:text-emerald-200 dark:border-emerald-700"
+                              : "bg-rose-100/80 text-rose-900 border-rose-300 dark:bg-rose-900/50 dark:text-rose-200 dark:border-rose-700"
+                          }`}
+                        >
+                          {estudianteSeleccionado.definitivaSemestral.aprobado
+                            ? "✓ Aprobado"
+                            : "✕ Reprobado"}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Bloque central: Nota Final y desglose de aportes */}
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                      {/* Nota Final en Grande */}
+                      <div className="md:col-span-5 p-4 rounded-xl bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 text-center flex flex-col items-center justify-center shadow-xs">
+                        <span className="text-xs uppercase font-medium tracking-wider text-zinc-500 dark:text-zinc-400">
+                          Definitiva Semestral
+                        </span>
+                        <div className="my-1 flex items-baseline justify-center gap-1.5">
+                          <span
+                            className={`text-4xl font-extrabold font-mono tracking-tight ${
+                              estudianteSeleccionado.definitivaSemestral.aprobado
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-rose-600 dark:text-rose-400"
+                            }`}
+                          >
+                            {estudianteSeleccionado.definitivaSemestral.notaFinal.toFixed(1)}
+                          </span>
+                          <span className="text-sm font-medium text-zinc-400">/ 5.0</span>
+                        </div>
+                        <span className="text-[11px] text-zinc-500 dark:text-zinc-400 font-mono">
+                          Valor exacto: {estudianteSeleccionado.definitivaSemestral.notaFinalExacta.toFixed(2)} pts
+                        </span>
+                      </div>
+
+                      {/* Fila / Desglose de aportes de C1, C2 y C3 */}
+                      <div className="md:col-span-7 grid grid-cols-3 gap-2">
+                        {/* Corte 1 */}
+                        <div className="p-3 rounded-lg bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 text-center">
+                          <span className="text-[10px] uppercase font-semibold text-zinc-500 dark:text-zinc-400 block">
+                            Corte 1 (35%)
+                          </span>
+                          <span className="font-mono text-sm font-bold text-zinc-800 dark:text-zinc-200 block mt-1">
+                            {estudianteSeleccionado.definitivaC1 !== null
+                              ? estudianteSeleccionado.definitivaC1.toFixed(1)
+                              : "0.0"}
+                          </span>
+                          <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-medium block mt-0.5">
+                            +{estudianteSeleccionado.definitivaSemestral.aporteC1.toFixed(2)} pts
+                          </span>
+                        </div>
+
+                        {/* Corte 2 */}
+                        <div className="p-3 rounded-lg bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 text-center">
+                          <span className="text-[10px] uppercase font-semibold text-zinc-500 dark:text-zinc-400 block">
+                            Corte 2 (35%)
+                          </span>
+                          <span className="font-mono text-sm font-bold text-zinc-800 dark:text-zinc-200 block mt-1">
+                            {estudianteSeleccionado.definitivaC2 !== null
+                              ? estudianteSeleccionado.definitivaC2.toFixed(1)
+                              : "0.0"}
+                          </span>
+                          <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-medium block mt-0.5">
+                            +{estudianteSeleccionado.definitivaSemestral.aporteC2.toFixed(2)} pts
+                          </span>
+                        </div>
+
+                        {/* Corte 3 */}
+                        <div className="p-3 rounded-lg bg-white dark:bg-zinc-900/90 border border-zinc-200 dark:border-zinc-800 text-center">
+                          <span className="text-[10px] uppercase font-semibold text-zinc-500 dark:text-zinc-400 block">
+                            Corte 3 (30%)
+                          </span>
+                          <span className="font-mono text-sm font-bold text-zinc-800 dark:text-zinc-200 block mt-1">
+                            {estudianteSeleccionado.definitivaActual !== null
+                              ? estudianteSeleccionado.definitivaActual.toFixed(1)
+                              : "0.0"}
+                          </span>
+                          <span className="font-mono text-[11px] text-emerald-600 dark:text-emerald-400 font-medium block mt-0.5">
+                            +{estudianteSeleccionado.definitivaSemestral.aporteC3.toFixed(2)} pts
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>

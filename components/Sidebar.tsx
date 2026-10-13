@@ -3,7 +3,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, CalendarDays, BookOpen, UserCheck, BarChart3, Database } from "lucide-react";
+import { LayoutDashboard, CalendarDays, BookOpen, UserCheck, BarChart3, Database, Settings } from "lucide-react";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 interface NavItem {
@@ -38,6 +38,11 @@ const navItems: NavItem[] = [
     href: "/reportes",
     icon: BarChart3,
   },
+  {
+    label: "Configuración & Respaldos",
+    href: "/configuracion",
+    icon: Settings,
+  },
 ];
 
 function NavLinks() {
@@ -56,16 +61,22 @@ function NavLinks() {
           <Link
             key={item.href}
             href={item.href}
-            className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+            className={`relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all ${
               isActive
-                ? "bg-zinc-100 text-zinc-900 dark:bg-white/10 dark:text-zinc-50"
-                : "text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-50 dark:hover:bg-zinc-800/50"
+                ? "bg-zinc-100 font-semibold text-zinc-900 shadow-2xs dark:bg-zinc-800/80 dark:text-white"
+                : "font-medium text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100/70 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/40"
             }`}
           >
+            {isActive && (
+              <span
+                className="absolute left-0 top-1.5 bottom-1.5 w-1 bg-zinc-900 dark:bg-zinc-100 rounded-r"
+                aria-hidden="true"
+              />
+            )}
             <Icon
               className={`w-4 h-4 shrink-0 transition-colors ${
                 isActive
-                  ? "text-zinc-900 dark:text-zinc-50"
+                  ? "text-zinc-900 dark:text-zinc-100 stroke-[2.25]"
                   : "text-zinc-500 dark:text-zinc-400"
               }`}
             />

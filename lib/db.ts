@@ -10,6 +10,8 @@ export interface Asignatura {
   periodoId: number;
   nombre: string; // ej. "Programación de Computadores"
   programa: string; // ej. "Ingeniería de Sistemas"
+  numeroClase?: string; // ej. "3688"
+  numeroCatalogo?: string; // ej. "396CBASM"
 }
 
 export interface Estudiante {
@@ -26,6 +28,7 @@ export interface Corte {
   asignaturaId: number;
   numeroCorte: number; // 1, 2, 3
   porcentaje: number; // 35, 35, 30
+  rasEvaluados?: number[]; // IDs de Resultados de Aprendizaje evaluados en este corte
 }
 
 export interface Actividad {
@@ -52,6 +55,23 @@ export interface Socializacion {
   fechaActualizacion?: string;
 }
 
+export interface ProgramaAcademico {
+  id?: number;
+  nombre: string; // ej. "Ingeniería de Sistemas"
+}
+
+export interface ResultadoAprendizaje {
+  id?: number;
+  asignaturaId: number;
+  codigo: string; // ej. "RA1", "RA2"
+  descripcion: string; // Redacción detallada de la competencia
+}
+
+export interface ConfiguracionDocente {
+  id: number; // 1 (registro singleton)
+  nombreDocente: string;
+}
+
 export class GestorAcademicoDB extends Dexie {
   periodos!: Table<Periodo, number>;
   asignaturas!: Table<Asignatura, number>;
@@ -60,6 +80,9 @@ export class GestorAcademicoDB extends Dexie {
   actividades!: Table<Actividad, number>;
   notas!: Table<Nota, number>;
   socializaciones!: Table<Socializacion, number>;
+  programas!: Table<ProgramaAcademico, number>;
+  resultados_aprendizaje!: Table<ResultadoAprendizaje, number>;
+  configuracion!: Table<ConfiguracionDocente, number>;
 
   constructor() {
     super("GestorAcademicoDB");
@@ -87,6 +110,42 @@ export class GestorAcademicoDB extends Dexie {
       actividades: "++id, corteId, nombre, porcentaje",
       notas: "++id, estudianteId, actividadId, valor",
       socializaciones: "++id, estudianteId, corteId, [estudianteId+corteId], estado",
+    });
+
+    this.version(4).stores({
+      periodos: "++id, nombre",
+      asignaturas: "++id, periodoId, nombre, programa",
+      estudiantes: "++id, asignaturaId, identificacion, nombreCompleto",
+      cortes: "++id, asignaturaId, numeroCorte, porcentaje",
+      actividades: "++id, corteId, nombre, porcentaje",
+      notas: "++id, estudianteId, actividadId, valor",
+      socializaciones: "++id, estudianteId, corteId, [estudianteId+corteId], estado",
+      programas: "++id, &nombre",
+    });
+
+    this.version(5).stores({
+      periodos: "++id, nombre",
+      asignaturas: "++id, periodoId, nombre, programa",
+      estudiantes: "++id, asignaturaId, identificacion, nombreCompleto",
+      cortes: "++id, asignaturaId, numeroCorte, porcentaje",
+      actividades: "++id, corteId, nombre, porcentaje",
+      notas: "++id, estudianteId, actividadId, valor",
+      socializaciones: "++id, estudianteId, corteId, [estudianteId+corteId], estado",
+      programas: "++id, &nombre",
+      resultados_aprendizaje: "++id, asignaturaId, codigo",
+    });
+
+    this.version(6).stores({
+      periodos: "++id, nombre",
+      asignaturas: "++id, periodoId, nombre, programa",
+      estudiantes: "++id, asignaturaId, identificacion, nombreCompleto",
+      cortes: "++id, asignaturaId, numeroCorte, porcentaje",
+      actividades: "++id, corteId, nombre, porcentaje",
+      notas: "++id, estudianteId, actividadId, valor",
+      socializaciones: "++id, estudianteId, corteId, [estudianteId+corteId], estado",
+      programas: "++id, &nombre",
+      resultados_aprendizaje: "++id, asignaturaId, codigo",
+      configuracion: "id",
     });
   }
 }

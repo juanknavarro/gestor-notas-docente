@@ -6,6 +6,7 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Estudiante } from "@/lib/db";
 import { VistaCorte } from "@/components/VistaCorte";
 import { VistaConsolidado } from "@/components/VistaConsolidado";
+import { VistaRAP } from "@/components/VistaRAP";
 import {
   ArrowLeft,
   BookOpen,
@@ -23,6 +24,7 @@ import {
   Calculator,
   UserPlus,
   UserCheck,
+  Target,
 } from "lucide-react";
 
 interface ParsedStudent {
@@ -112,7 +114,7 @@ interface AsignaturaDetailClientProps {
   asignaturaId: number;
 }
 
-type TabType = "estudiantes" | "corte-1" | "corte-2" | "corte-3" | "consolidado";
+type TabType = "estudiantes" | "rap" | "corte-1" | "corte-2" | "corte-3" | "consolidado";
 
 export function AsignaturaDetailClient({ asignaturaId }: AsignaturaDetailClientProps) {
   // Estado para la navegación por pestañas (Tabs)
@@ -155,6 +157,11 @@ export function AsignaturaDetailClient({ asignaturaId }: AsignaturaDetailClientP
 
   const estudiantes = useLiveQuery(
     () => (asignaturaId ? db.estudiantes.where("asignaturaId").equals(asignaturaId).toArray() : []),
+    [asignaturaId]
+  );
+
+  const resultadosCount = useLiveQuery(
+    () => (asignaturaId ? db.resultados_aprendizaje.where("asignaturaId").equals(asignaturaId).count() : 0),
     [asignaturaId]
   );
 
@@ -459,6 +466,14 @@ export function AsignaturaDetailClient({ asignaturaId }: AsignaturaDetailClientP
               <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 text-xs font-medium uppercase tracking-wider mb-1">
                 <BookOpen className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
                 <span>{asignatura.programa}</span>
+                {asignatura.numeroClase && (
+                  <>
+                    <span>•</span>
+                    <span className="font-mono font-semibold tracking-normal text-zinc-700 dark:text-zinc-300">
+                      Clase {asignatura.numeroClase}
+                    </span>
+                  </>
+                )}
               </div>
               <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50 tracking-tight">
                 {asignatura.nombre}
@@ -503,31 +518,59 @@ export function AsignaturaDetailClient({ asignaturaId }: AsignaturaDetailClientP
         )}
       </div>
 
-      {/* 2. Sistema de Pestañas (Tabs) */}
-      <div className="border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2 overflow-x-auto pb-px">
+      {/* 2. Sistema de Pestañas (Segmented Tabs / Cápsulas Elevadas) */}
+      <div className="bg-zinc-100/80 p-1.5 rounded-xl border border-zinc-200/80 dark:bg-zinc-900/80 dark:border-zinc-800 flex items-center gap-1.5 overflow-x-auto">
         <button
           type="button"
           onClick={() => setActiveTab("estudiantes")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-lg transition-colors border-b-2 -mb-px shrink-0 ${
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs rounded-lg transition-all shrink-0 ${
             activeTab === "estudiantes"
-              ? "border-zinc-900 text-zinc-900 bg-white dark:border-zinc-100 dark:text-zinc-50 dark:bg-zinc-900/40"
-              : "border-transparent text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/30"
+              ? "bg-white text-zinc-900 shadow-xs font-semibold dark:bg-zinc-800 dark:text-zinc-50"
+              : "font-medium text-zinc-500 hover:text-zinc-900 hover:bg-white/50 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/40"
           }`}
         >
           <Users className="w-3.5 h-3.5" />
           <span>Estudiantes</span>
-          <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-zinc-100 border border-zinc-200 dark:bg-zinc-800 dark:border-zinc-700/60 text-zinc-600 dark:text-zinc-400">
+          <span
+            className={`font-mono text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+              activeTab === "estudiantes"
+                ? "bg-zinc-100 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-200"
+                : "bg-zinc-200/60 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+            }`}
+          >
             {estudiantes ? estudiantes.length : 0}
           </span>
         </button>
 
         <button
           type="button"
+          onClick={() => setActiveTab("rap")}
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs rounded-lg transition-all shrink-0 ${
+            activeTab === "rap"
+              ? "bg-white text-zinc-900 shadow-xs font-semibold dark:bg-zinc-800 dark:text-zinc-50"
+              : "font-medium text-zinc-500 hover:text-zinc-900 hover:bg-white/50 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/40"
+          }`}
+        >
+          <Target className="w-3.5 h-3.5" />
+          <span>Resultados (RAP)</span>
+          <span
+            className={`font-mono text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+              activeTab === "rap"
+                ? "bg-zinc-100 text-zinc-800 dark:bg-zinc-700 dark:text-zinc-200"
+                : "bg-zinc-200/60 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400"
+            }`}
+          >
+            {resultadosCount ?? 0}
+          </span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab("corte-1")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-lg transition-colors border-b-2 -mb-px shrink-0 ${
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs rounded-lg transition-all shrink-0 ${
             activeTab === "corte-1"
-              ? "border-zinc-900 text-zinc-900 bg-white dark:border-zinc-100 dark:text-zinc-50 dark:bg-zinc-900/40"
-              : "border-transparent text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/30"
+              ? "bg-white text-zinc-900 shadow-xs font-semibold dark:bg-zinc-800 dark:text-zinc-50"
+              : "font-medium text-zinc-500 hover:text-zinc-900 hover:bg-white/50 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/40"
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
@@ -537,10 +580,10 @@ export function AsignaturaDetailClient({ asignaturaId }: AsignaturaDetailClientP
         <button
           type="button"
           onClick={() => setActiveTab("corte-2")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-lg transition-colors border-b-2 -mb-px shrink-0 ${
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs rounded-lg transition-all shrink-0 ${
             activeTab === "corte-2"
-              ? "border-zinc-900 text-zinc-900 bg-white dark:border-zinc-100 dark:text-zinc-50 dark:bg-zinc-900/40"
-              : "border-transparent text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/30"
+              ? "bg-white text-zinc-900 shadow-xs font-semibold dark:bg-zinc-800 dark:text-zinc-50"
+              : "font-medium text-zinc-500 hover:text-zinc-900 hover:bg-white/50 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/40"
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
@@ -550,10 +593,10 @@ export function AsignaturaDetailClient({ asignaturaId }: AsignaturaDetailClientP
         <button
           type="button"
           onClick={() => setActiveTab("corte-3")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-lg transition-colors border-b-2 -mb-px shrink-0 ${
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs rounded-lg transition-all shrink-0 ${
             activeTab === "corte-3"
-              ? "border-zinc-900 text-zinc-900 bg-white dark:border-zinc-100 dark:text-zinc-50 dark:bg-zinc-900/40"
-              : "border-transparent text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/30"
+              ? "bg-white text-zinc-900 shadow-xs font-semibold dark:bg-zinc-800 dark:text-zinc-50"
+              : "font-medium text-zinc-500 hover:text-zinc-900 hover:bg-white/50 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/40"
           }`}
         >
           <Layers className="w-3.5 h-3.5" />
@@ -563,10 +606,10 @@ export function AsignaturaDetailClient({ asignaturaId }: AsignaturaDetailClientP
         <button
           type="button"
           onClick={() => setActiveTab("consolidado")}
-          className={`flex items-center gap-2 px-4 py-2.5 text-xs font-medium rounded-t-lg transition-colors border-b-2 -mb-px shrink-0 ${
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs rounded-lg transition-all shrink-0 ${
             activeTab === "consolidado"
-              ? "border-zinc-900 text-zinc-900 bg-white dark:border-zinc-100 dark:text-zinc-50 dark:bg-zinc-900/40"
-              : "border-transparent text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100/60 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/30"
+              ? "bg-white text-zinc-900 shadow-xs font-semibold dark:bg-zinc-800 dark:text-zinc-50"
+              : "font-medium text-zinc-500 hover:text-zinc-900 hover:bg-white/50 dark:text-zinc-400 dark:hover:text-zinc-200 dark:hover:bg-zinc-800/40"
           }`}
         >
           <Calculator className="w-3.5 h-3.5" />
@@ -933,6 +976,11 @@ export function AsignaturaDetailClient({ asignaturaId }: AsignaturaDetailClientP
             )}
           </div>
         </div>
+      )}
+
+      {/* Renderizado de Catálogo de Resultados de Aprendizaje (RAP) */}
+      {activeTab === "rap" && (
+        <VistaRAP asignaturaId={asignaturaId} />
       )}
 
       {/* Renderizado de Corte 1 */}

@@ -1,9 +1,20 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Actividad } from "@/lib/db";
 import { calcularDefinitivaCorte } from "@/lib/calculos";
+import {
+  generarPlantillaExcelCorte,
+  procesarExcelNotas,
+  type ResultadoImportacionExcel,
+} from "@/lib/excel-corte";
+import {
+  prepararDatosInformeCorte,
+  prepararDatosPlanMejoramiento,
+} from "@/lib/reportes";
+import { generarExcelMortalidad } from "@/lib/generadorMortalidad";
+import { generarExcelMejoramiento } from "@/lib/generadorMejoramiento";
 import {
   Plus,
   Trash2,
@@ -16,6 +27,14 @@ import {
   Check,
   X,
   Sparkles,
+  Download,
+  FileUp,
+  Target,
+  ChevronDown,
+  FileText,
+  BarChart3,
+  FileCheck2,
+  Loader2,
 } from "lucide-react";
 
 interface VistaCorteProps {
@@ -46,6 +65,63 @@ export function VistaCorte({
 
   // Estados locales temporales para celdas de notas mientras el usuario tipea
   const [editingNotas, setEditingNotas] = useState<Record<string, string>>({});
+
+  // Estados para importación y exportación de plantillas Excel (.xlsx)
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [isImportingExcel, setIsImportingExcel] = useState(false);
+  const [modalImportacionAbierto, setModalImportacionAbierto] = useState(false);
+  const [resultadoModal, setResultadoModal] = useState<ResultadoImportacionExcel | null>(null);
+
+  // Estados para Menú Desplegable de Informes Institucionales
+  const [dropdownInformesAbierto, setDropdownInformesAbierto] = useState(false);
+  const [isGenerandoMortalidad, setIsGenerandoMortalidad] = useState(false);
+  const [isGenerandoMejoramiento, setIsGenerandoMejoramiento] = useState(false);
+  const dropdownInformesRef = useRef<HTMLDivElement | null>(null);
+
+  // Cerrar menú desplegable al hacer clic fuera
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        dropdownInformesRef.current &&
+        !dropdownInformesRef.current.contains(event.target as Node)
+      ) {
+        setDropdownInformesAbierto(false);
+      }
+    }
+    if (dropdownInformesAbierto) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [dropdownInformesAbierto]);
+
+  // Estados y consultas para Resultados de Aprendizaje (RAP)
+  const [modalRAsAbierto, setModalRAsAbierto] = useState(false);
+
+  const corteActual = useLiveQuery(
+    () => db.cortes.get(corteId),
+    [corteId]
+  );
+
+  const rasAsignatura = useLiveQuery(
+    () => db.resultados_aprendizaje.where("asignaturaId").equals(asignaturaId).toArray(),
+    [asignaturaId]
+  );
+
+  const rasEvaluadosEnEsteCorte = useMemo(() => {
+    if (!rasAsignatura || !corteActual?.rasEvaluados) return [];
+    return rasAsignatura.filter((ra) => corteActual.rasEvaluados?.includes(ra.id!));
+  }, [rasAsignatura, corteActual?.rasEvaluados]);
+
+  const handleToggleRA = async (raId: number) => {
+    const actuales = corteActual?.rasEvaluados || [];
+    const nuevos = actuales.includes(raId)
+      ? actuales.filter((id) => id !== raId)
+      : [...actuales, raId];
+
+    await db.cortes.update(corteId, { rasEvaluados: nuevos });
+  };
 
   // 1. Actividades asociadas a este corte
   const actividades = useLiveQuery(
@@ -357,6 +433,118 @@ export function VistaCorte({
     return calcularDefinitivaCorte(estudianteId, actividades, notasMap, pesoCorte);
   };
 
+  // Descargar plantilla Excel (.xlsx) con actividades del corte actual y estudiantes
+  const handleDescargarPlantillaExcel = async () => {
+    if (!actividades || actividades.length === 0) {
+      alert("Debes crear al menos una actividad en este corte para generar la plantilla.");
+      return;
+    }
+
+    try {
+      const { buffer, filename } = await generarPlantillaExcelCorte(
+        estudiantes || [],
+        actividades,
+        notasMap,
+        numeroCorte
+      );
+
+      const blob = new Blob([buffer], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error al exportar plantilla Excel:", err);
+      alert("Ocurrió un error al generar la plantilla de Excel.");
+    }
+  };
+
+  // Leer e importar notas desde un archivo Excel (.xlsx) seleccionado
+  const handleSeleccionarExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsImportingExcel(true);
+      const reader = new FileReader();
+
+      reader.onload = async (event) => {
+        const buffer = event.target?.result as ArrayBuffer;
+        const res = await procesarExcelNotas(buffer, corteId, asignaturaId);
+        setResultadoModal(res);
+        setModalImportacionAbierto(true);
+        setIsImportingExcel(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      };
+
+      reader.onerror = () => {
+        alert("No se pudo leer el archivo Excel seleccionado.");
+        setIsImportingExcel(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      };
+
+      reader.readAsArrayBuffer(file);
+    } catch (err) {
+      console.error("Error al procesar archivo Excel:", err);
+      alert("Ocurrió un error inesperado al procesar el archivo Excel.");
+      setIsImportingExcel(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  // Descarga del Informe Oficial en Excel: Mortalidad Académica Parcial
+  const handleDescargarMortalidad = async () => {
+    try {
+      setIsGenerandoMortalidad(true);
+      setDropdownInformesAbierto(false);
+      const datos = await prepararDatosInformeCorte(corteId);
+      if (!datos) {
+        alert("No se pudieron cargar los datos del corte para generar el informe.");
+        return;
+      }
+      await generarExcelMortalidad(datos);
+    } catch (error) {
+      console.error("Error al generar el informe de mortalidad:", error);
+      alert("Ocurrió un error al generar el informe de mortalidad académica.");
+    } finally {
+      setIsGenerandoMortalidad(false);
+    }
+  };
+
+  // Descarga del Informe Oficial en Excel: Plan de Mejoramiento del Desempeño Académico
+  const handleDescargarPlanMejoramiento = async () => {
+    try {
+      setIsGenerandoMejoramiento(true);
+      setDropdownInformesAbierto(false);
+
+      // Obtener la asignatura para conocer su periodoId
+      const asig = await db.asignaturas.get(asignaturaId);
+      if (!asig) {
+        alert("No se pudo identificar la asignatura actual.");
+        return;
+      }
+
+      const datos = await prepararDatosPlanMejoramiento(asig.periodoId, numeroCorte);
+      if (!datos) {
+        alert("No se pudieron recopilar los datos del Plan de Mejoramiento para este periodo.");
+        return;
+      }
+
+      await generarExcelMejoramiento(datos);
+    } catch (error) {
+      console.error("Error al generar el Plan de Mejoramiento:", error);
+      alert("Ocurrió un error inesperado al generar el Plan de Mejoramiento.");
+    } finally {
+      setIsGenerandoMejoramiento(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* 1. Header del Corte e Indicador Visual de Porcentajes */}
@@ -413,8 +601,45 @@ export function VistaCorte({
           </div>
         </div>
 
+        {/* Sección Compacta: Resultados de Aprendizaje Evaluados en este Corte */}
+        <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700 dark:text-zinc-300 shrink-0">
+              <Target className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+              <span>Resultados de Aprendizaje (RAP):</span>
+            </div>
+
+            {rasEvaluadosEnEsteCorte.length > 0 ? (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {rasEvaluadosEnEsteCorte.map((ra) => (
+                  <span
+                    key={ra.id}
+                    title={ra.descripcion}
+                    className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono font-bold bg-blue-50 text-blue-700 border border-blue-200/80 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800/60 cursor-help transition-transform hover:scale-105"
+                  >
+                    {ra.codigo}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-xs text-zinc-400 dark:text-zinc-500 italic">
+                Sin RAs vinculados a este corte
+              </span>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setModalRAsAbierto(true)}
+            className="px-2.5 py-1 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-200 dark:border-zinc-700 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 self-start sm:self-auto shadow-2xs"
+          >
+            <Target className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
+            <span>Vincular RAs</span>
+          </button>
+        </div>
+
         {/* Formulario para Crear Nueva Actividad */}
-        <div className="pt-4 border-t border-zinc-100 dark:border-zinc-800">
+        <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800">
           <form onSubmit={handleCrearActividad} className="space-y-3">
             <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-3">
               <div className="flex-1">
@@ -648,8 +873,8 @@ export function VistaCorte({
 
       {/* 2. Cuadrícula de Notas con Columnas Sticky (Mejoras 2, 3 y 4) */}
       <div className="bg-white border border-zinc-200 shadow-sm dark:bg-zinc-900/50 dark:border-zinc-800 dark:shadow-none rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center gap-2 flex-wrap">
             <FileSpreadsheet className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
             <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">
               Cuadrícula de Calificaciones — Corte {numeroCorte}
@@ -659,13 +884,117 @@ export function VistaCorte({
             </span>
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
-            <span className="flex items-center gap-1">
-              <Calculator className="w-3.5 h-3.5" />
-              <span>Enter = siguiente fila</span>
-            </span>
-            <span>•</span>
-            <span>Auto-guardado activo (0.0 a 5.0)</span>
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Input oculto para carga de archivo Excel (.xlsx) */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+              onChange={handleSeleccionarExcel}
+              className="hidden"
+            />
+
+            {/* Botón Descargar Plantilla Excel */}
+            <button
+              type="button"
+              onClick={handleDescargarPlantillaExcel}
+              disabled={!actividades || actividades.length === 0}
+              className="px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:border-zinc-700/60 dark:text-zinc-200 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs disabled:opacity-40"
+              title="Descargar plantilla Excel (.xlsx) con encabezados de actividades de este corte"
+            >
+              <Download className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
+              <span>Descargar Plantilla Excel</span>
+            </button>
+
+            {/* Botón Importar Notas Excel */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isImportingExcel || !actividades || actividades.length === 0}
+              className="px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:border-zinc-700/60 dark:text-zinc-200 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs disabled:opacity-40"
+              title="Importar calificaciones masivamente desde un archivo Excel (.xlsx)"
+            >
+              <FileUp className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
+              <span>{isImportingExcel ? "Importando..." : "Importar Notas Excel"}</span>
+            </button>
+
+            {/* Menú Desplegable: Generar Informes Institucionales */}
+            <div className="relative" ref={dropdownInformesRef}>
+              <button
+                type="button"
+                onClick={() => setDropdownInformesAbierto((prev) => !prev)}
+                disabled={isGenerandoMortalidad || !estudiantes || estudiantes.length === 0}
+                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-900 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-xs disabled:opacity-40"
+                title="Generar informes institucionales oficiales en Excel"
+              >
+                {isGenerandoMortalidad ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <FileText className="w-3.5 h-3.5" />
+                )}
+                <span>
+                  {isGenerandoMortalidad
+                    ? "Generando..."
+                    : "Generar Informes Institucionales"}
+                </span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${dropdownInformesAbierto ? "rotate-180" : ""}`} />
+              </button>
+
+              {dropdownInformesAbierto && (
+                <div className="absolute right-0 mt-1.5 w-64 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl z-50 py-1 overflow-hidden animate-in fade-in slide-in-from-top-1">
+                  <div className="px-3 py-1.5 border-b border-zinc-100 dark:border-zinc-800 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
+                    Informes Oficiales de Corte
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleDescargarMortalidad}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-start gap-2.5"
+                  >
+                    <BarChart3 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-medium text-zinc-900 dark:text-zinc-100 leading-tight">
+                        Mortalidad Académica Parcial
+                      </p>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                        Formato oficial con cálculo de reprobados, aprobados y promedio.
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDescargarPlanMejoramiento}
+                    disabled={isGenerandoMejoramiento}
+                    className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-start gap-2.5 group disabled:opacity-50"
+                  >
+                    {isGenerandoMejoramiento ? (
+                      <Loader2 className="w-4 h-4 text-indigo-500 animate-spin mt-0.5 shrink-0" />
+                    ) : (
+                      <FileCheck2 className="w-4 h-4 text-indigo-500 mt-0.5 shrink-0" />
+                    )}
+                    <div className="flex-1">
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium text-zinc-900 dark:text-zinc-100 leading-tight">
+                          Plan de Mejoramiento
+                        </p>
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                          Global
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                        Consolidado de todas las asignaturas de este corte y periodo.
+                      </p>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="hidden xl:flex items-center gap-1 text-[11px] text-zinc-400 border-l border-zinc-200 dark:border-zinc-800 pl-3 font-mono">
+              <Calculator className="w-3 h-3" />
+              <span>Auto-guardado activo</span>
+            </div>
           </div>
         </div>
 
@@ -869,6 +1198,177 @@ export function VistaCorte({
           </div>
         )}
       </div>
+
+      {/* 3. Modal de Resumen de Importación CSV (Paso 4) */}
+      {modalImportacionAbierto && resultadoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-md w-full p-6 shadow-xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            {/* Cabecera del Modal */}
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 text-base">
+                    Resultado de la Importación
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Procesamiento de calificaciones Excel (.xlsx)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalImportacionAbierto(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                title="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Métricas de Importación */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800/80">
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Notas Guardadas
+                </div>
+                <div className="text-2xl font-bold font-mono text-zinc-900 dark:text-zinc-100 mt-1">
+                  {resultadoModal.notasProcesadas}
+                </div>
+              </div>
+              <div className="p-3.5 rounded-xl bg-zinc-50 dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800/80">
+                <div className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Estudiantes Afectados
+                </div>
+                <div className="text-2xl font-bold font-mono text-zinc-900 dark:text-zinc-100 mt-1">
+                  {resultadoModal.estudiantesActualizados}
+                </div>
+              </div>
+            </div>
+
+            {/* Advertencias y filas omitidas */}
+            {resultadoModal.advertencias.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-medium text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>
+                    Observaciones y avisos ({resultadoModal.advertencias.length})
+                  </span>
+                </div>
+                <div className="max-h-40 overflow-y-auto p-3 rounded-xl bg-amber-50/60 border border-amber-200 dark:bg-amber-950/30 dark:border-amber-900/40 text-xs text-amber-800 dark:text-amber-300 font-mono space-y-1">
+                  {resultadoModal.advertencias.map((adv, idx) => (
+                    <div key={idx} className="leading-relaxed">
+                      • {adv}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Botón de Confirmación */}
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => setModalImportacionAbierto(false)}
+                className="w-full py-2.5 px-4 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 font-medium text-sm rounded-xl transition-colors shadow-sm"
+              >
+                Aceptar y Ver Calificaciones
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. Modal para Vincular Resultados de Aprendizaje (Paso 4) */}
+      {modalRAsAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-lg w-full p-6 shadow-xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            {/* Cabecera del Modal */}
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400">
+                  <Target className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 text-base">
+                    Vincular RAs — Corte {numeroCorte}
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Selecciona los Resultados de Aprendizaje evaluados en este corte
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalRAsAbierto(false)}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors"
+                title="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Lista de Checkboxes */}
+            <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+              {rasAsignatura && rasAsignatura.length > 0 ? (
+                rasAsignatura.map((ra) => {
+                  const estaSeleccionado = corteActual?.rasEvaluados?.includes(ra.id!) ?? false;
+                  return (
+                    <label
+                      key={ra.id}
+                      className={`flex items-start gap-3 p-3 rounded-xl border transition-all cursor-pointer ${
+                        estaSeleccionado
+                          ? "bg-blue-50/60 border-blue-200 dark:bg-blue-950/30 dark:border-blue-800/60"
+                          : "bg-zinc-50/60 border-zinc-200/80 hover:bg-zinc-100/60 dark:bg-zinc-950/40 dark:border-zinc-800"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={estaSeleccionado}
+                        onChange={() => handleToggleRA(ra.id!)}
+                        className="mt-0.5 rounded border-zinc-300 text-blue-600 focus:ring-blue-500 dark:border-zinc-700 dark:bg-zinc-900"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100 mr-2">
+                          {ra.codigo}
+                        </span>
+                        <p className="text-xs text-zinc-600 dark:text-zinc-300 leading-relaxed mt-0.5">
+                          {ra.descripcion}
+                        </p>
+                      </div>
+                    </label>
+                  );
+                })
+              ) : (
+                <div className="p-6 text-center text-xs text-zinc-500 space-y-1">
+                  <p className="font-medium text-zinc-700 dark:text-zinc-300">
+                    Esta asignatura no tiene Resultados de Aprendizaje registrados.
+                  </p>
+                  <p className="text-[11px] text-zinc-400">
+                    Agrégalos en la pestaña &quot;Resultados (RAP)&quot; de la asignatura.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Pie del Modal */}
+            <div className="pt-2 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+              <span className="text-[11px] text-zinc-400 font-mono">
+                {corteActual?.rasEvaluados?.length ?? 0} RA(s) asignado(s)
+              </span>
+              <button
+                type="button"
+                onClick={() => setModalRAsAbierto(false)}
+                className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 font-medium text-xs rounded-xl transition-colors shadow-2xs"
+              >
+                Listo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
