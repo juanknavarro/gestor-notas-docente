@@ -970,6 +970,15 @@ export default function SocializacionPage() {
                           C1: {estudianteSeleccionado.definitivaC1?.toFixed(1) ?? "0.0"} (35%) + C2:{" "}
                           {estudianteSeleccionado.definitivaActual?.toFixed(1) ?? "0.0"} (35%)
                         </p>
+                        <p
+                          className={`text-xs mt-1 font-medium ${
+                            estudianteSeleccionado.proyeccionC3.acumulado70 / 0.7 >= 3.0
+                              ? "text-green-600 dark:text-green-400"
+                              : "text-red-600 dark:text-red-400"
+                          }`}
+                        >
+                          Estado de tu 70%: {(estudianteSeleccionado.proyeccionC3.acumulado70 / 0.7).toFixed(2)}
+                        </p>
                       </div>
 
                       {/* Nota requerida en el Corte 3 */}
