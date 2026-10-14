@@ -1,6 +1,11 @@
 import { Suspense, use } from "react";
 import { AsignaturaDetailClient } from "@/components/AsignaturaDetailClient";
 
+export function generateStaticParams() {
+  // Genera rutas estáticas base para compatibilidad con exportación estática de Next.js
+  return Array.from({ length: 50 }, (_, i) => ({ id: String(i + 1) }));
+}
+
 interface PageProps {
   params: Promise<{ id: string }>;
 }
