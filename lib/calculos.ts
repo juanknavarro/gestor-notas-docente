@@ -28,17 +28,23 @@ export interface DistribucionResultados {
   totalReprobados: number;
 }
 
+export interface DetalleDefinitivaCorte {
+  definitiva: number; // Redondeada a 1 decimal como valor lógico oficial (ej: 3.0)
+  definitivaExacta: number; // Valor continuo flotante antes del redondeo (ej: 2.964)
+  aprobado: boolean; // definitiva >= 3.0
+  esArrastre: boolean; // definitivaExacta < 3.0 && definitiva >= 3.0 (ej: 2.95 - 2.99)
+}
+
 /**
- * Calcula la calificación definitiva de un estudiante en un corte dado.
- * Pondera las actividades regulares (pesoCorte) y suma directamente las bonificaciones.
- * Aplica tope máximo institucional de 5.0.
+ * Calcula la calificación definitiva de un estudiante en un corte dado con detalle
+ * de aproximación decimal para alimentar la lógica del semáforo visual.
  */
-export function calcularDefinitivaCorte(
+export function calcularDetalleDefinitivaCorte(
   estudianteId: number,
   actividades: Actividad[] | undefined | null,
   notasMap: Map<string, number>,
   pesoCorte: number
-): number | null {
+): DetalleDefinitivaCorte | null {
   if (!actividades || actividades.length === 0) return null;
 
   const actividadesRegulares = actividades.filter((a) => !a.esBonificacion);
@@ -63,9 +69,91 @@ export function calcularDefinitivaCorte(
     sumaBonos += bono;
   }
 
-  // 3. Definitiva final con tope máximo en 5.0
-  const definitivaFinal = Math.min(definitivaBase + sumaBonos, 5.0);
-  return definitivaFinal;
+  // 3. Definitiva final continua con tope máximo en 5.0
+  const definitivaExacta = Math.min(definitivaBase + sumaBonos, 5.0);
+  // Redondeo matemático oficial a 1 decimal como valor real de la lógica (ej. 2.96 -> 3.0)
+  const definitiva = Number(definitivaExacta.toFixed(1));
+  const aprobado = definitiva >= 3.0;
+  const esArrastre = definitivaExacta < 3.0 && definitiva >= 3.0;
+
+  return {
+    definitiva,
+    definitivaExacta,
+    aprobado,
+    esArrastre,
+  };
+}
+
+/**
+ * Calcula la calificación definitiva oficial de un estudiante en un corte dado.
+ * Pondera las actividades regulares (pesoCorte) y suma directamente las bonificaciones.
+ * Devuelve el número redondeado a 1 decimal como valor real de la lógica (ej. 2.96 -> 3.0).
+ * Aplica tope máximo institucional de 5.0.
+ */
+export function calcularDefinitivaCorte(
+  estudianteId: number,
+  actividades: Actividad[] | undefined | null,
+  notasMap: Map<string, number>,
+  pesoCorte: number
+): number | null {
+  const detalle = calcularDetalleDefinitivaCorte(
+    estudianteId,
+    actividades,
+    notasMap,
+    pesoCorte
+  );
+  return detalle !== null ? detalle.definitiva : null;
+}
+
+export type EstadoSemaforoNota = "reprobado" | "arrastre" | "aprobado";
+
+/**
+ * Determina el estado del semáforo para una nota:
+ * - ROJO (Reprobado): notaRedondeada < 3.0
+ * - AMARILLO/NARANJA (Aprobado por arrastre): notaExacta < 3.0 pero notaRedondeada es 3.0 (ej. 2.95, 2.98)
+ * - VERDE (Aprobado sólido): notaExacta >= 3.0
+ */
+export function determinarEstadoSemaforoNota(
+  notaRedondeada: number,
+  notaExacta?: number | null
+): EstadoSemaforoNota {
+  if (notaRedondeada < 3.0) return "reprobado";
+  if (notaExacta !== undefined && notaExacta !== null) {
+    if (notaExacta < 3.0 && notaRedondeada >= 3.0) return "arrastre";
+    return "aprobado";
+  }
+  return "aprobado";
+}
+
+/**
+ * Retorna las clases de estilo de Tailwind según la regla de 3 estados:
+ * - ROJO (Reprobado): text-rose-600 / bg-rose-50
+ * - AMARILLO/NARANJA (Aprobado por arrastre): text-amber-500/600 / bg-amber-50
+ * - VERDE (Aprobado sólido): text-emerald-600 / bg-emerald-50
+ */
+export function obtenerClasesSemaforoNota(
+  notaRedondeada: number,
+  notaExacta?: number | null,
+  formato: "badge" | "texto" = "badge"
+): string {
+  const estado = determinarEstadoSemaforoNota(notaRedondeada, notaExacta);
+
+  if (estado === "reprobado") {
+    return formato === "badge"
+      ? "text-rose-700 bg-rose-50 border border-rose-200/80 dark:text-rose-400 dark:bg-rose-950/40 dark:border-rose-900/60"
+      : "text-rose-600 dark:text-rose-400";
+  }
+
+  if (estado === "arrastre") {
+    return formato === "badge"
+      ? "text-amber-700 bg-amber-50 border border-amber-300 dark:text-amber-400 dark:bg-amber-950/40 dark:border-amber-800/70"
+      : "text-amber-500 dark:text-amber-400";
+  }
+
+  // Aprobado sólido
+  return formato === "badge"
+    ? "text-emerald-700 bg-emerald-50 border border-emerald-200/80 dark:text-emerald-400 dark:bg-emerald-950/40 dark:border-emerald-900/60"
+    : "text-emerald-600 dark:text-emerald-400";
 }
 
 /**
@@ -180,6 +268,7 @@ export interface DefinitivaAsignatura {
   aporteC3: number; // (Definitiva_C3 * peso3 / 100)
   aprobado: boolean; // true si notaFinal >= 3.0
   categoria: CategoriaDesempeno; // "Bajo" | "Aceptable" | "Competente" | "Excelente"
+  esArrastre: boolean; // notaFinalExacta < 3.0 && notaFinal >= 3.0
   corte1Presente: boolean;
   corte2Presente: boolean;
   corte3Presente: boolean;
@@ -218,6 +307,7 @@ export function calcularDefinitivaAsignatura(
     aporteC3,
     aprobado: notaFinal >= 3.0,
     categoria: clasificarResultadoAprendizaje(notaFinal),
+    esArrastre: notaFinalExacta < 3.0 && notaFinal >= 3.0,
     corte1Presente: defC1 !== null,
     corte2Presente: defC2 !== null,
     corte3Presente: defC3 !== null,

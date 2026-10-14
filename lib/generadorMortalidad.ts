@@ -26,8 +26,8 @@ export async function generarExcelMortalidad(datos: DatosInformeCorte): Promise<
     { key: "colH", width: 9 },   // H
     { key: "colI", width: 9 },   // I
     { key: "colJ", width: 12 },  // J
-    { key: "colK", width: 16 },  // K
-    { key: "colL", width: 14 },  // L
+    { key: "colK", width: 18 },  // K: Estudiantes con nota entre 2,0 y 2,9
+    { key: "colL", width: 16 },  // L: Promedio del grupo
   ];
 
   const thinBorder: Partial<ExcelJS.Borders> = {
@@ -202,45 +202,45 @@ export async function generarExcelMortalidad(datos: DatosInformeCorte): Promise<
   // ----------------------------------------------------
   worksheet.mergeCells("A11:C11");
   const cellHMat = worksheet.getCell("A11");
-  cellHMat.value = "Total Matriculados";
+  cellHMat.value = "N° Total de estudiantes";
   cellHMat.font = { name: "Arial", size: 9, bold: true };
   cellHMat.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
   cellHMat.fill = headerFill;
 
   worksheet.mergeCells("D11:F11");
   const cellHApr = worksheet.getCell("D11");
-  cellHApr.value = "Total Aprobados";
+  cellHApr.value = "Estudiantes con nota superior a 3,0";
   cellHApr.font = { name: "Arial", size: 9, bold: true };
   cellHApr.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
   cellHApr.fill = headerFill;
 
   worksheet.mergeCells("G11:H11");
   const cellHRep = worksheet.getCell("G11");
-  cellHRep.value = "Total Reprobados";
+  cellHRep.value = "Estudiantes con nota inferior a 3,0";
   cellHRep.font = { name: "Arial", size: 9, bold: true };
   cellHRep.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
   cellHRep.fill = headerFill;
 
   worksheet.mergeCells("I11:J11");
   const cellHInf2 = worksheet.getCell("I11");
-  cellHInf2.value = "Inferior a 2.0";
+  cellHInf2.value = "Estudiantes con nota inferior a 2,0";
   cellHInf2.font = { name: "Arial", size: 9, bold: true };
   cellHInf2.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
   cellHInf2.fill = headerFill;
 
   const cellHEnt2 = worksheet.getCell("K11");
-  cellHEnt2.value = "Entre 2.0 y 2.9";
+  cellHEnt2.value = "Estudiantes con nota entre 2,0 y 2,9";
   cellHEnt2.font = { name: "Arial", size: 9, bold: true };
   cellHEnt2.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
   cellHEnt2.fill = headerFill;
 
   const cellHProm = worksheet.getCell("L11");
-  cellHProm.value = "Promedio Corte";
+  cellHProm.value = "Promedio del grupo";
   cellHProm.font = { name: "Arial", size: 9, bold: true };
   cellHProm.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
   cellHProm.fill = headerFill;
 
-  worksheet.getRow(11).height = 24;
+  worksheet.getRow(11).height = 36;
 
   // Bordes fila 11
   ["A11", "B11", "C11", "D11", "E11", "F11", "G11", "H11", "I11", "J11", "K11", "L11"].forEach((ref) => {

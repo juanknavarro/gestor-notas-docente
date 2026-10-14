@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, type ProgramaAcademico } from "@/lib/db";
+import { db, type ProgramaAcademico, limpiarBaseDeDatosLocal } from "@/lib/db";
 import {
   generarBackupJSON,
   validarBackupJSON,
@@ -14,6 +14,7 @@ import {
   Download,
   UploadCloud,
   ShieldCheck,
+  ShieldAlert,
   AlertTriangle,
   Database,
   Calendar,
@@ -32,6 +33,7 @@ import {
   Pencil,
   Check,
   User,
+  Loader2,
 } from "lucide-react";
 
 export default function ConfiguracionPage() {
@@ -74,10 +76,41 @@ export default function ConfiguracionPage() {
   const [importExito, setImportExito] = useState<string | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
 
-  // Estados del modal de confirmación
+  // Estados del modal de confirmación de restauración
   const [modalAbierto, setModalAbierto] = useState(false);
   const [payloadParaRestaurar, setPayloadParaRestaurar] = useState<BackupPayload | null>(null);
   const [archivoSeleccionadoNombre, setArchivoSeleccionadoNombre] = useState<string>("");
+
+  // Estados para Modal de Borrado Seguro / Limpieza Profunda (Zona de Peligro)
+  const [modalResetAbierto, setModalResetAbierto] = useState(false);
+  const [confirmResetTexto, setConfirmResetTexto] = useState("");
+  const [isResetting, setIsResetting] = useState(false);
+
+  const handleAbrirModalReset = () => {
+    setConfirmResetTexto("");
+    setModalResetAbierto(true);
+  };
+
+  const handleCerrarModalReset = () => {
+    if (isResetting) return;
+    setConfirmResetTexto("");
+    setModalResetAbierto(false);
+  };
+
+  const handleEjecutarReset = async () => {
+    if (confirmResetTexto.trim() !== "BORRAR") return;
+
+    try {
+      setIsResetting(true);
+      await limpiarBaseDeDatosLocal();
+      // Recargar la aplicación desde la raíz limpiando memoria por completo
+      window.location.replace("/");
+    } catch (error) {
+      console.error("Error al ejecutar la limpieza profunda:", error);
+      alert("Ocurrió un error inesperado al limpiar los datos locales.");
+      setIsResetting(false);
+    }
+  };
 
   // Estados del Catálogo de Programas Académicos
   const [nuevoPrograma, setNuevoPrograma] = useState("");
@@ -813,7 +846,35 @@ export default function ConfiguracionPage() {
         </div>
       </div>
 
-      {/* MODAL DE CONFIRMACIÓN DE SEGURIDAD (Destructivo) */}
+      {/* 4. ZONA DE PELIGRO: RESTABLECIMIENTO DE FÁBRICA / LIMPIEZA PROFUNDA */}
+      <div className="rounded-xl border border-rose-300 bg-rose-50/40 p-6 shadow-xs dark:border-rose-900/60 dark:bg-rose-950/20 transition-all">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 rounded-lg bg-rose-100 dark:bg-rose-900/50 text-rose-600 dark:text-rose-400">
+                <ShieldAlert className="w-4 h-4" />
+              </div>
+              <h2 className="text-sm font-bold text-rose-950 dark:text-rose-200 tracking-tight">
+                Zona de Peligro: Restablecimiento de Fábrica
+              </h2>
+            </div>
+            <p className="text-xs text-rose-800/90 dark:text-rose-300/80 max-w-2xl leading-relaxed mt-1">
+              Esta acción purga de forma permanente e irrecuperable todas las asignaturas, periodos, notas, cortes, estudiantes matriculados y datos del docente almacenados en este navegador. <strong>Recomendado si utilizas un equipo de uso compartido, sala de cómputo o computador del aula</strong> para no dejar ningún rastro de tu información.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleAbrirModalReset}
+            className="px-4 py-2.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-xs font-semibold rounded-lg transition-colors flex items-center justify-center gap-2 shrink-0 shadow-sm shadow-rose-900/20 cursor-pointer"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Restablecer y Borrar Datos Locales</span>
+          </button>
+        </div>
+      </div>
+
+      {/* MODAL DE CONFIRMACIÓN DE SEGURIDAD (Destructivo - Restauración) */}
       {modalAbierto && payloadParaRestaurar && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
           <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden transition-all">
@@ -911,6 +972,116 @@ export default function ConfiguracionPage() {
                   <>
                     <AlertTriangle className="w-3.5 h-3.5" />
                     <span>Sobreescribir y Restaurar Datos</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMACIÓN DE ALTA SEGURIDAD: RESTABLECIMIENTO DE FÁBRICA */}
+      {modalResetAbierto && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-zinc-900 border border-rose-200 dark:border-rose-900/60 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden transition-all">
+            {/* Cabecera del Modal */}
+            <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between bg-rose-50/50 dark:bg-rose-950/30">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300 rounded-lg">
+                  <ShieldAlert className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-zinc-900 dark:text-zinc-50">
+                    Confirmar Restablecimiento Absoluto
+                  </h3>
+                  <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium">
+                    Acción crítica e irreversible
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleCerrarModalReset}
+                disabled={isResetting}
+                className="p-1.5 text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Contenido del Modal */}
+            <div className="p-6 space-y-4">
+              {/* Banner de Impacto de Datos */}
+              <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 dark:bg-rose-950/40 dark:border-rose-900/60 text-xs text-rose-900 dark:text-rose-200 space-y-2">
+                <div className="flex items-center gap-2 font-bold uppercase tracking-wide text-rose-700 dark:text-rose-300">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>Estás a punto de borrar:</span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 font-mono font-medium text-xs pt-1 border-t border-rose-200/60 dark:border-rose-900/40">
+                  <div>• {metricas?.asignaturas ?? 0} asignaturas</div>
+                  <div>• {metricas?.estudiantes ?? 0} estudiantes</div>
+                  <div>• {metricas?.periodos ?? 0} periodos</div>
+                  <div>• {metricas?.notas ?? 0} calificaciones</div>
+                </div>
+              </div>
+
+              {/* Advertencia de Respaldo */}
+              <div className="p-3.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/40 text-xs text-amber-800 dark:text-amber-300/90 leading-relaxed">
+                <strong>Advertencia de Respaldo:</strong> Sin un archivo de respaldo previo (descargado en formato <code>.json</code> desde la sección superior), <strong>toda tu información se perderá irremediablemente</strong> y no podrá ser recuperada en ningún dispositivo.
+              </div>
+
+              {/* Input de confirmación con palabra clave */}
+              <div className="space-y-2 pt-1">
+                <label
+                  htmlFor="confirmResetInput"
+                  className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 leading-normal"
+                >
+                  Para confirmar la eliminación, escribe la palabra{" "}
+                  <span className="font-mono font-bold text-rose-600 dark:text-rose-400 bg-rose-100/70 dark:bg-rose-950/80 px-1.5 py-0.5 rounded border border-rose-200 dark:border-rose-800">
+                    BORRAR
+                  </span>{" "}
+                  en el campo a continuación:
+                </label>
+                <input
+                  id="confirmResetInput"
+                  type="text"
+                  value={confirmResetTexto}
+                  onChange={(e) => setConfirmResetTexto(e.target.value)}
+                  placeholder="Escribe BORRAR para desbloquear"
+                  disabled={isResetting}
+                  autoComplete="off"
+                  className="w-full px-3.5 py-2 text-sm font-mono rounded-lg bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-500 dark:bg-zinc-950 dark:border-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-600 dark:focus:border-rose-500 dark:focus:ring-rose-500 transition-colors"
+                />
+              </div>
+            </div>
+
+            {/* Acciones del Modal */}
+            <div className="px-6 py-4 bg-zinc-50/50 dark:bg-zinc-900/60 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={handleCerrarModalReset}
+                disabled={isResetting}
+                className="px-4 py-2 text-xs font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100 border border-zinc-200 dark:border-zinc-800 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-40"
+              >
+                Cancelar
+              </button>
+
+              <button
+                type="button"
+                onClick={handleEjecutarReset}
+                disabled={confirmResetTexto.trim() !== "BORRAR" || isResetting}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 shadow-sm shadow-rose-900/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-rose-600"
+              >
+                {isResetting ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Eliminando datos locales...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Eliminar definitivamente todos los datos</span>
                   </>
                 )}
               </button>

@@ -151,3 +151,26 @@ export class GestorAcademicoDB extends Dexie {
 }
 
 export const db = new GestorAcademicoDB();
+
+/**
+ * Realiza una limpieza profunda y atómica de todos los datos locales almacenados
+ * en IndexedDB, localStorage y sessionStorage.
+ * Diseñado para restablecer la aplicación en equipos públicos o compartidos sin romper
+ * la reactividad de los componentes de React.
+ */
+export async function limpiarBaseDeDatosLocal(): Promise<void> {
+  // 1. Transacción atómica de lectura/escritura para vaciar todas las tablas registradas en Dexie
+  await db.transaction("rw", db.tables, async () => {
+    await Promise.all(db.tables.map((table) => table.clear()));
+  });
+
+  // 2. Limpieza de almacenamiento web (preferencias, flags, cachés)
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.clear();
+      sessionStorage.clear();
+    } catch (e) {
+      console.warn("No se pudo vaciar el almacenamiento web del navegador:", e);
+    }
+  }
+}

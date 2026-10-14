@@ -5,10 +5,12 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Socializacion } from "@/lib/db";
 import {
   calcularDefinitivaCorte,
+  calcularDetalleDefinitivaCorte,
   calcularProyeccionCorte3,
   type ProyeccionCorte3,
   calcularDefinitivaAsignatura,
   type DefinitivaAsignatura,
+  obtenerClasesSemaforoNota,
 } from "@/lib/calculos";
 import {
   UserCheck,
@@ -38,6 +40,7 @@ interface EstudianteSocializacionData {
   identificacion: string;
   nombreCompleto: string;
   definitivaActual: number | null;
+  definitivaActualExacta?: number | null;
   definitivaC1: number | null;
   definitivaC2: number | null;
   definitivaC3: number | null;
@@ -209,7 +212,8 @@ export default function SocializacionPage() {
       const pesoC3 = corte3?.porcentaje ?? 30;
 
       const procesados: EstudianteSocializacionData[] = estudiantes.map((est) => {
-        const defActual = calcularDefinitivaCorte(est.id!, actActuales, nMap, pesoActual);
+        const detalleActual = calcularDetalleDefinitivaCorte(est.id!, actActuales, nMap, pesoActual);
+        const defActual = detalleActual?.definitiva ?? null;
         const soc = socMap.get(est.id!);
         const estaSocializado = soc?.estado === "socializado";
 
@@ -246,6 +250,7 @@ export default function SocializacionPage() {
           identificacion: est.identificacion,
           nombreCompleto: est.nombreCompleto,
           definitivaActual: defActual,
+          definitivaActualExacta: detalleActual?.definitivaExacta ?? null,
           definitivaC1: defC1,
           definitivaC2: defC2,
           definitivaC3: defC3,
@@ -664,11 +669,19 @@ export default function SocializacionPage() {
                         <div className="text-right shrink-0">
                           {est.definitivaActual !== null ? (
                             <span
-                              className={`font-mono text-sm font-bold block ${
+                              title={
+                                est.definitivaActualExacta !== null &&
+                                est.definitivaActualExacta !== undefined &&
+                                est.definitivaActualExacta < 3.0 &&
                                 est.definitivaActual >= 3.0
-                                  ? "text-emerald-600 dark:text-emerald-400"
-                                  : "text-rose-600 dark:text-rose-400"
-                              }`}
+                                  ? `Aprobado por aproximación decimal (${est.definitivaActualExacta.toFixed(2)} → ${est.definitivaActual.toFixed(1)})`
+                                  : undefined
+                              }
+                              className={`font-mono text-sm font-bold block ${obtenerClasesSemaforoNota(
+                                est.definitivaActual,
+                                est.definitivaActualExacta,
+                                "texto"
+                              )}`}
                             >
                               {est.definitivaActual.toFixed(1)}
                             </span>
@@ -764,11 +777,23 @@ export default function SocializacionPage() {
                     </span>
                     <div className="my-2">
                       <span
-                        className={`text-3xl font-extrabold font-mono ${
+                        title={
+                          estudianteSeleccionado.definitivaActualExacta !== null &&
+                          estudianteSeleccionado.definitivaActualExacta !== undefined &&
+                          estudianteSeleccionado.definitivaActualExacta < 3.0 &&
                           estudianteSeleccionado.definitivaActual !== null &&
                           estudianteSeleccionado.definitivaActual >= 3.0
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-rose-600 dark:text-rose-400"
+                            ? `Aprobado por aproximación decimal (${estudianteSeleccionado.definitivaActualExacta.toFixed(2)} → ${estudianteSeleccionado.definitivaActual.toFixed(1)})`
+                            : undefined
+                        }
+                        className={`text-3xl font-extrabold font-mono ${
+                          estudianteSeleccionado.definitivaActual !== null
+                            ? obtenerClasesSemaforoNota(
+                                estudianteSeleccionado.definitivaActual,
+                                estudianteSeleccionado.definitivaActualExacta,
+                                "texto"
+                              )
+                            : "text-zinc-400"
                         }`}
                       >
                         {estudianteSeleccionado.definitivaActual !== null

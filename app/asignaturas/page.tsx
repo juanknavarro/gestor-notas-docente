@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Asignatura } from "@/lib/db";
@@ -43,9 +43,33 @@ export default function AsignaturasPage() {
   const programas = useLiveQuery(() => db.programas.orderBy("nombre").toArray(), []);
 
   // Mapeo rápido de periodoId -> nombre de periodo
-  const periodosMap = new Map<number, string>(
-    periodos?.map((p) => [p.id!, p.nombre]) || []
-  );
+  const periodosMap = useMemo(() => {
+    return new Map<number, string>(
+      periodos?.map((p) => [p.id!, p.nombre]) || []
+    );
+  }, [periodos]);
+
+  // Ordenamiento doble de asignaturas en memoria:
+  // 1. Descendente por el nombre del periodo (ej. "2026-2" antes que "2026-1")
+  // 2. Si tienen el mismo periodo, orden ascendente (alfabético) por el nombre de la asignatura
+  const asignaturasOrdenadas = useMemo(() => {
+    if (!asignaturas) return undefined;
+    return [...asignaturas].sort((a, b) => {
+      const periodoA = periodosMap.get(a.periodoId) || "";
+      const periodoB = periodosMap.get(b.periodoId) || "";
+
+      const compPeriodo = periodoB.localeCompare(periodoA, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+      if (compPeriodo !== 0) return compPeriodo;
+
+      return a.nombre.localeCompare(b.nombre, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
+    });
+  }, [asignaturas, periodosMap]);
 
   const handleAbrirModalEdicion = (asig: Asignatura) => {
     if (!asig.id) return;
@@ -440,15 +464,15 @@ export default function AsignaturasPage() {
             Asignaturas Registradas
           </h2>
           <span className="text-xs text-zinc-600 dark:text-zinc-400 font-mono bg-zinc-100 border border-zinc-200 dark:bg-zinc-800/60 dark:border-zinc-700/50 px-2 py-0.5 rounded">
-            Total: {asignaturas ? asignaturas.length : 0}
+            Total: {asignaturasOrdenadas ? asignaturasOrdenadas.length : 0}
           </span>
         </div>
 
-        {asignaturas === undefined ? (
+        {asignaturasOrdenadas === undefined ? (
           <div className="p-8 text-center text-sm text-zinc-500">
             Cargando asignaturas desde IndexedDB...
           </div>
-        ) : asignaturas.length === 0 ? (
+        ) : asignaturasOrdenadas.length === 0 ? (
           <div className="p-12 text-center flex flex-col items-center justify-center">
             <div className="w-10 h-10 rounded-full bg-zinc-100 border border-zinc-200 dark:bg-zinc-800/80 dark:border-zinc-700/60 flex items-center justify-center text-zinc-500 dark:text-zinc-400 mb-3">
               <BookOpen className="w-5 h-5" />
@@ -471,7 +495,7 @@ export default function AsignaturasPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-                {asignaturas.map((asig) => (
+                {asignaturasOrdenadas.map((asig) => (
                   <tr
                     key={asig.id}
                     className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30 transition-colors"

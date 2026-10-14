@@ -5,7 +5,9 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { db } from "@/lib/db";
 import {
   calcularDefinitivaCorte,
+  calcularDetalleDefinitivaCorte,
   calcularProyeccionCorte3,
+  obtenerClasesSemaforoNota,
   type ProyeccionCorte3,
 } from "@/lib/calculos";
 import {
@@ -30,8 +32,11 @@ interface FilaConsolidado {
   identificacion: string;
   nombreCompleto: string;
   definitivaC1: number | null;
+  definitivaC1Exacta: number | null;
   definitivaC2: number | null;
+  definitivaC2Exacta: number | null;
   definitivaC3: number | null;
+  definitivaC3Exacta: number | null;
   proyeccion: ProyeccionCorte3;
 }
 
@@ -110,9 +115,13 @@ export function VistaConsolidado({ asignaturaId }: VistaConsolidadoProps) {
     const peso3 = c3?.porcentaje ?? 30;
 
     const listaFilas: FilaConsolidado[] = estudiantes.map((est) => {
-      const defC1 = calcularDefinitivaCorte(est.id!, actC1, notasMap, peso1);
-      const defC2 = calcularDefinitivaCorte(est.id!, actC2, notasMap, peso2);
-      const defC3 = calcularDefinitivaCorte(est.id!, actC3, notasMap, peso3);
+      const d1 = calcularDetalleDefinitivaCorte(est.id!, actC1, notasMap, peso1);
+      const d2 = calcularDetalleDefinitivaCorte(est.id!, actC2, notasMap, peso2);
+      const d3 = calcularDetalleDefinitivaCorte(est.id!, actC3, notasMap, peso3);
+
+      const defC1 = d1?.definitiva ?? null;
+      const defC2 = d2?.definitiva ?? null;
+      const defC3 = d3?.definitiva ?? null;
 
       const proy = calcularProyeccionCorte3(defC1, defC2);
 
@@ -121,8 +130,11 @@ export function VistaConsolidado({ asignaturaId }: VistaConsolidadoProps) {
         identificacion: est.identificacion,
         nombreCompleto: est.nombreCompleto,
         definitivaC1: defC1,
+        definitivaC1Exacta: d1?.definitivaExacta ?? null,
         definitivaC2: defC2,
+        definitivaC2Exacta: d2?.definitivaExacta ?? null,
         definitivaC3: defC3,
+        definitivaC3Exacta: d3?.definitivaExacta ?? null,
         proyeccion: proy,
       };
     });
@@ -449,11 +461,20 @@ export function VistaConsolidado({ asignaturaId }: VistaConsolidadoProps) {
                       <td className="px-4 py-2.5 text-center font-mono border-r border-zinc-200 dark:border-zinc-800">
                         {fila.definitivaC1 !== null ? (
                           <span
-                            className={`font-semibold ${
+                            title={
+                              fila.definitivaC1Exacta !== null &&
+                              fila.definitivaC1Exacta < 3.0 &&
                               fila.definitivaC1 >= 3.0
-                                ? "text-zinc-900 dark:text-zinc-100"
-                                : "text-rose-600 dark:text-rose-400"
-                            }`}
+                                ? `Aprobado por aproximación decimal (${fila.definitivaC1Exacta.toFixed(2)} → ${fila.definitivaC1.toFixed(1)})`
+                                : fila.definitivaC1 >= 3.0
+                                ? "Aprobado sólido (≥ 3.0)"
+                                : "Reprobado (< 3.0)"
+                            }
+                            className={`font-semibold ${obtenerClasesSemaforoNota(
+                              fila.definitivaC1,
+                              fila.definitivaC1Exacta,
+                              "texto"
+                            )}`}
                           >
                             {fila.definitivaC1.toFixed(1)}
                           </span>
@@ -466,11 +487,20 @@ export function VistaConsolidado({ asignaturaId }: VistaConsolidadoProps) {
                       <td className="px-4 py-2.5 text-center font-mono border-r border-zinc-200 dark:border-zinc-800">
                         {fila.definitivaC2 !== null ? (
                           <span
-                            className={`font-semibold ${
+                            title={
+                              fila.definitivaC2Exacta !== null &&
+                              fila.definitivaC2Exacta < 3.0 &&
                               fila.definitivaC2 >= 3.0
-                                ? "text-zinc-900 dark:text-zinc-100"
-                                : "text-rose-600 dark:text-rose-400"
-                            }`}
+                                ? `Aprobado por aproximación decimal (${fila.definitivaC2Exacta.toFixed(2)} → ${fila.definitivaC2.toFixed(1)})`
+                                : fila.definitivaC2 >= 3.0
+                                ? "Aprobado sólido (≥ 3.0)"
+                                : "Reprobado (< 3.0)"
+                            }
+                            className={`font-semibold ${obtenerClasesSemaforoNota(
+                              fila.definitivaC2,
+                              fila.definitivaC2Exacta,
+                              "texto"
+                            )}`}
                           >
                             {fila.definitivaC2.toFixed(1)}
                           </span>

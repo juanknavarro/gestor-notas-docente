@@ -3,7 +3,12 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Actividad } from "@/lib/db";
-import { calcularDefinitivaCorte } from "@/lib/calculos";
+import {
+  calcularDefinitivaCorte,
+  calcularDetalleDefinitivaCorte,
+  obtenerClasesSemaforoNota,
+  type DetalleDefinitivaCorte,
+} from "@/lib/calculos";
 import {
   generarPlantillaExcelCorte,
   procesarExcelNotas,
@@ -429,6 +434,17 @@ export function VistaCorte({
   };
 
   // Cálculo matemático de la definitiva del corte mediante módulo centralizado lib/calculos.ts
+  const getDetalleDefinitivaEstudiante = (
+    estudianteId: number
+  ): DetalleDefinitivaCorte | null => {
+    return calcularDetalleDefinitivaCorte(
+      estudianteId,
+      actividades,
+      notasMap,
+      pesoCorte
+    );
+  };
+
   const getDefinitivaEstudiante = (estudianteId: number): number | null => {
     return calcularDefinitivaCorte(estudianteId, actividades, notasMap, pesoCorte);
   };
@@ -519,6 +535,11 @@ export function VistaCorte({
 
   // Descarga del Informe Oficial en Excel: Plan de Mejoramiento del Desempeño Académico
   const handleDescargarPlanMejoramiento = async () => {
+    if (numeroCorte === 3) {
+      alert("El plan de mejoramiento solo aplica para los cortes 1 y 2.");
+      return;
+    }
+
     try {
       setIsGenerandoMejoramiento(true);
       setDropdownInformesAbierto(false);
@@ -962,31 +983,53 @@ export function VistaCorte({
                     </div>
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={handleDescargarPlanMejoramiento}
-                    disabled={isGenerandoMejoramiento}
-                    className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-start gap-2.5 group disabled:opacity-50"
-                  >
-                    {isGenerandoMejoramiento ? (
-                      <Loader2 className="w-4 h-4 text-indigo-500 animate-spin mt-0.5 shrink-0" />
-                    ) : (
-                      <FileCheck2 className="w-4 h-4 text-indigo-500 mt-0.5 shrink-0" />
-                    )}
-                    <div className="flex-1">
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium text-zinc-900 dark:text-zinc-100 leading-tight">
-                          Plan de Mejoramiento
+                  {numeroCorte === 3 ? (
+                    <div
+                      title="El plan de mejoramiento solo aplica para los cortes 1 y 2"
+                      className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-400 dark:text-zinc-500 opacity-60 cursor-not-allowed flex items-start gap-2.5 bg-zinc-50/50 dark:bg-zinc-900/50 select-none"
+                    >
+                      <FileCheck2 className="w-4 h-4 text-zinc-400 dark:text-zinc-500 mt-0.5 shrink-0" />
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <p className="font-medium text-zinc-500 dark:text-zinc-400 leading-tight">
+                            Plan de Mejoramiento
+                          </p>
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 border border-zinc-200 dark:border-zinc-700">
+                            Cortes 1 y 2
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+                          El plan de mejoramiento solo aplica para los cortes 1 y 2
                         </p>
-                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
-                          Global
-                        </span>
                       </div>
-                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-                        Consolidado de todas las asignaturas de este corte y periodo.
-                      </p>
                     </div>
-                  </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleDescargarPlanMejoramiento}
+                      disabled={isGenerandoMejoramiento}
+                      className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-start gap-2.5 group disabled:opacity-50"
+                    >
+                      {isGenerandoMejoramiento ? (
+                        <Loader2 className="w-4 h-4 text-indigo-500 animate-spin mt-0.5 shrink-0" />
+                      ) : (
+                        <FileCheck2 className="w-4 h-4 text-indigo-500 mt-0.5 shrink-0" />
+                      )}
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                          <p className="font-medium text-zinc-900 dark:text-zinc-100 leading-tight">
+                            Plan de Mejoramiento
+                          </p>
+                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                            Global
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                          Consolidado de todas las asignaturas de este corte y periodo.
+                        </p>
+                      </div>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -1086,7 +1129,8 @@ export function VistaCorte({
 
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/60">
                 {estudiantes.map((estudiante, studentIndex) => {
-                  const definitiva = getDefinitivaEstudiante(estudiante.id!);
+                  const detalleDef = getDetalleDefinitivaEstudiante(estudiante.id!);
+                  const definitiva = detalleDef?.definitiva ?? null;
 
                   return (
                     <tr
@@ -1176,15 +1220,22 @@ export function VistaCorte({
 
                       {/* Sticky 4: Definitiva del Corte (Sticky a la derecha) */}
                       <td className="sticky right-0 z-10 w-36 min-w-[130px] px-4 py-2.5 text-center font-mono font-bold bg-zinc-50 group-hover:bg-zinc-100 dark:bg-zinc-950 dark:group-hover:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.5)]">
-                        {definitiva !== null ? (
+                        {detalleDef !== null ? (
                           <span
-                            className={`inline-block px-2.5 py-0.5 rounded ${
-                              definitiva >= 3.0
-                                ? "text-emerald-700 bg-emerald-50 dark:text-emerald-400 dark:bg-emerald-950/40"
-                                : "text-rose-700 bg-rose-50 dark:text-rose-400 dark:bg-rose-950/40"
-                            }`}
+                            title={
+                              detalleDef.esArrastre
+                                ? `Aprobado por aproximación decimal (${detalleDef.definitivaExacta.toFixed(2)} → ${detalleDef.definitiva.toFixed(1)})`
+                                : detalleDef.aprobado
+                                ? "Aprobado sólido (≥ 3.0)"
+                                : "Reprobado (< 3.0)"
+                            }
+                            className={`inline-block px-2.5 py-0.5 rounded font-bold ${obtenerClasesSemaforoNota(
+                              detalleDef.definitiva,
+                              detalleDef.definitivaExacta,
+                              "badge"
+                            )}`}
                           >
-                            {definitiva.toFixed(1)}
+                            {detalleDef.definitiva.toFixed(1)}
                           </span>
                         ) : (
                           <span className="text-zinc-400">—</span>

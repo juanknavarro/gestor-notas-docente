@@ -211,23 +211,30 @@ export async function generarExcelMejoramiento(
 
       // Col E: HALLAZGOS
       const cellE = worksheet.getCell(`E${currentRow}`);
-      cellE.value = "";
-      cellE.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+      cellE.value =
+        "1. Algunos estudiantes registran inasistencia a clase sin justa causa.\n2. Falta de bases sólidas.\n3. Falta de interés y compromiso con los estudios.";
+      cellE.font = { name: "Arial", size: 8.5 };
+      cellE.alignment = { vertical: "top", horizontal: "left", wrapText: true };
 
       // Col F: CAUSAS
       const cellF = worksheet.getCell(`F${currentRow}`);
-      cellF.value = "";
-      cellF.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+      cellF.value =
+        "1. Falta de estudio y concentración en clase.\n2. Inmadurez académica.";
+      cellF.font = { name: "Arial", size: 8.5 };
+      cellF.alignment = { vertical: "top", horizontal: "left", wrapText: true };
 
       // Col G: Objetivo
       const cellG = worksheet.getCell(`G${currentRow}`);
-      cellG.value = "";
-      cellG.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+      cellG.value = "Mejorar el desempeño académico de los estudiantes.";
+      cellG.font = { name: "Arial", size: 8.5 };
+      cellG.alignment = { vertical: "top", horizontal: "left", wrapText: true };
 
       // Col H: Accion a Implementar
       const cellH = worksheet.getCell(`H${currentRow}`);
-      cellH.value = "";
-      cellH.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+      cellH.value =
+        "1. Tutorías personalizadas.\n2. Apoyo de Monitores.\n3. Nivelaciones.";
+      cellH.font = { name: "Arial", size: 8.5 };
+      cellH.alignment = { vertical: "top", horizontal: "left", wrapText: true };
 
       // Col I: Responsable
       const cellI = worksheet.getCell(`I${currentRow}`);
@@ -248,19 +255,21 @@ export async function generarExcelMejoramiento(
       // Col L: Observaciones
       const cellL = worksheet.getCell(`L${currentRow}`);
       cellL.value = "";
-      cellL.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+      cellL.font = { name: "Arial", size: 8.5 };
+      cellL.alignment = { vertical: "top", horizontal: "left", wrapText: true };
 
       // Col M: Evidencias
       const cellM = worksheet.getCell(`M${currentRow}`);
-      cellM.value = "";
-      cellM.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+      cellM.value = "Material de clases.\nListas de asistencia a nivelaciones.";
+      cellM.font = { name: "Arial", size: 8.5 };
+      cellM.alignment = { vertical: "top", horizontal: "left", wrapText: true };
 
       // Aplicar bordes finos a todas las celdas de la fila
       allCols.forEach((col) => {
         worksheet.getCell(`${col}${currentRow}`).border = thinBorder;
       });
 
-      worksheet.getRow(currentRow).height = 42;
+      worksheet.getRow(currentRow).height = 55;
       currentRow++;
     }
   }
