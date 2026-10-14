@@ -1162,7 +1162,7 @@ export function VistaCorte({
                           cellKey in editingNotas
                             ? editingNotas[cellKey]
                             : valorBD !== undefined
-                            ? String(valorBD)
+                            ? Number(valorBD).toFixed(1)
                             : "";
                         const isBono = !!act.esBonificacion;
 

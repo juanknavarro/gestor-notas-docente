@@ -1,16 +1,19 @@
 {
   "name": "gestor-notas-docente",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
+  "main": "main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:exe": "next build && electron-builder",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "dexie": "^4.4.6",
     "dexie-react-hooks": "^4.4.0",
+    "electron-serve": "^3.0.1",
     "exceljs": "^4.4.0",
     "lucide-react": "^1.54.0",
     "next": "16.4.0",
@@ -25,10 +28,28 @@
     "@types/react-dom": "^19",
     "electron": "^44.7.2",
     "electron-builder": "^26.15.3",
-    "electron-serve": "^3.0.1",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "build": {
+    "appId": "com.juanramos.gestoracademico",
+    "productName": "Gestor Académico",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "main.js",
+      "package.json",
+      "node_modules/electron-serve/**/*"
+    ],
+    "win": {
+      "icon": "icon.ico",
+      "target": [
+        "portable"
+      ]
+    }
   }
 }
