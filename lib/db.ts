@@ -29,6 +29,7 @@ export interface Corte {
   numeroCorte: number; // 1, 2, 3
   porcentaje: number; // 35, 35, 30
   rasEvaluados?: number[]; // IDs de Resultados de Aprendizaje evaluados en este corte
+  bloqueado?: boolean; // Indica si el corte está bloqueado para edición de notas y actividades
 }
 
 export interface Actividad {

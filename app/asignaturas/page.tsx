@@ -16,7 +16,14 @@ import {
   CalendarDays,
   X,
   Check,
+  ChevronDown,
 } from "lucide-react";
+
+export interface GrupoAnio {
+  anio: string;
+  totalAsignaturas: number;
+  asignaturas: Asignatura[];
+}
 
 export default function AsignaturasPage() {
   const [periodoId, setPeriodoId] = useState<string>("");
@@ -70,6 +77,68 @@ export default function AsignaturasPage() {
       });
     });
   }, [asignaturas, periodosMap]);
+
+  // Agrupación jerárquica por año en memoria a partir de las asignaturas ordenadas:
+  // - Extrae el año del periodo (ej. "2026-1" -> "2026").
+  // - Ordena los años en orden descendente (ej. "2027", "2026", "2025").
+  // - Preserva internamente el orden de las asignaturas (periodo descendente y alfabético).
+  const gruposPorAnio = useMemo<GrupoAnio[] | undefined>(() => {
+    if (!asignaturasOrdenadas) return undefined;
+
+    const mapaGrupos = new Map<string, Asignatura[]>();
+
+    for (const asig of asignaturasOrdenadas) {
+      const nombrePeriodo = periodosMap.get(asig.periodoId) || "";
+      const match = nombrePeriodo.match(/^(\d{4})/);
+      const anio = match ? match[1] : "Histórico";
+
+      if (!mapaGrupos.has(anio)) {
+        mapaGrupos.set(anio, []);
+      }
+      mapaGrupos.get(anio)!.push(asig);
+    }
+
+    // Ordenar los años de forma descendente (ej. 2027 > 2026, grupos de texto al final)
+    const aniosOrdenados = Array.from(mapaGrupos.keys()).sort((a, b) => {
+      const numA = parseInt(a, 10);
+      const numB = parseInt(b, 10);
+
+      const aIsNum = !isNaN(numA);
+      const bIsNum = !isNaN(numB);
+
+      if (aIsNum && bIsNum) {
+        return numB - numA; // Más reciente primero
+      }
+      if (aIsNum) return -1;
+      if (bIsNum) return 1;
+      return a.localeCompare(b);
+    });
+
+    return aniosOrdenados.map((anio) => {
+      const lista = mapaGrupos.get(anio)!;
+      return {
+        anio,
+        totalAsignaturas: lista.length,
+        asignaturas: lista,
+      };
+    });
+  }, [asignaturasOrdenadas, periodosMap]);
+
+  // Estado de expansión de acordeones por año:
+  // El primer año (más reciente) se abre por defecto si no ha sido interactuado aún.
+  const [aniosAbiertos, setAniosAbiertos] = useState<Record<string, boolean>>({});
+
+  const isAnioAbierto = (anio: string, index: number) => {
+    return aniosAbiertos[anio] !== undefined ? aniosAbiertos[anio] : index === 0;
+  };
+
+  const handleToggleAnio = (anio: string, index: number) => {
+    const actual = isAnioAbierto(anio, index);
+    setAniosAbiertos((prev) => ({
+      ...prev,
+      [anio]: !actual,
+    }));
+  };
 
   const handleAbrirModalEdicion = (asig: Asignatura) => {
     if (!asig.id) return;
@@ -456,24 +525,24 @@ export default function AsignaturasPage() {
         </form>
       </div>
 
-      {/* Lista de asignaturas (Card) */}
-      <div className="bg-white border border-zinc-200 shadow-sm dark:bg-zinc-900/50 dark:border-zinc-800 dark:shadow-none rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between">
+      {/* Lista de asignaturas agrupadas por Año (Acordeones) */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
           <h2 className="font-semibold text-zinc-900 dark:text-zinc-50 text-sm flex items-center gap-2">
             <FolderOpen className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-            Asignaturas Registradas
+            <span>Asignaturas Registradas</span>
           </h2>
-          <span className="text-xs text-zinc-600 dark:text-zinc-400 font-mono bg-zinc-100 border border-zinc-200 dark:bg-zinc-800/60 dark:border-zinc-700/50 px-2 py-0.5 rounded">
-            Total: {asignaturasOrdenadas ? asignaturasOrdenadas.length : 0}
+          <span className="text-xs text-zinc-600 dark:text-zinc-400 font-mono bg-zinc-100 border border-zinc-200 dark:bg-zinc-800/60 dark:border-zinc-700/50 px-2.5 py-1 rounded-lg">
+            Total: {asignaturas ? asignaturas.length : 0} {asignaturas?.length === 1 ? "asignatura" : "asignaturas"}
           </span>
         </div>
 
-        {asignaturasOrdenadas === undefined ? (
-          <div className="p-8 text-center text-sm text-zinc-500">
+        {gruposPorAnio === undefined ? (
+          <div className="bg-white border border-zinc-200 dark:bg-zinc-900/50 dark:border-zinc-800 rounded-xl p-8 text-center text-sm text-zinc-500">
             Cargando asignaturas desde IndexedDB...
           </div>
-        ) : asignaturasOrdenadas.length === 0 ? (
-          <div className="p-12 text-center flex flex-col items-center justify-center">
+        ) : gruposPorAnio.length === 0 ? (
+          <div className="bg-white border border-zinc-200 shadow-sm dark:bg-zinc-900/50 dark:border-zinc-800 dark:shadow-none rounded-xl p-12 text-center flex flex-col items-center justify-center">
             <div className="w-10 h-10 rounded-full bg-zinc-100 border border-zinc-200 dark:bg-zinc-800/80 dark:border-zinc-700/60 flex items-center justify-center text-zinc-500 dark:text-zinc-400 mb-3">
               <BookOpen className="w-5 h-5" />
             </div>
@@ -483,80 +552,135 @@ export default function AsignaturasPage() {
             </p>
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-zinc-50/80 text-zinc-500 dark:bg-zinc-900/80 dark:text-zinc-400 text-xs uppercase font-medium border-b border-zinc-200 dark:border-zinc-800">
-                <tr>
-                  <th className="px-6 py-3 w-20">ID</th>
-                  <th className="px-6 py-3">Asignatura</th>
-                  <th className="px-6 py-3">Programa</th>
-                  <th className="px-6 py-3">Periodo</th>
-                  <th className="px-6 py-3 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
-                {asignaturasOrdenadas.map((asig) => (
-                  <tr
-                    key={asig.id}
-                    className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30 transition-colors"
+          <div className="space-y-4">
+            {gruposPorAnio.map((grupo, index) => {
+              const isOpen = isAnioAbierto(grupo.anio, index);
+              return (
+                <div
+                  key={grupo.anio}
+                  className="bg-white border border-zinc-200 shadow-sm dark:bg-zinc-900/50 dark:border-zinc-800 dark:shadow-none rounded-xl overflow-hidden transition-all"
+                >
+                  {/* Header interactivo del Acordeón por Año */}
+                  <button
+                    type="button"
+                    onClick={() => handleToggleAnio(grupo.anio, index)}
+                    className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-zinc-50/80 dark:hover:bg-zinc-800/40 transition-colors select-none"
+                    aria-expanded={isOpen}
                   >
-                    <td className="px-6 py-4 font-mono text-xs text-zinc-400 dark:text-zinc-500">
-                      #{asig.id}
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-zinc-900 dark:text-zinc-100">
-                          {asig.nombre}
-                        </span>
-                        {asig.numeroClase && (
-                          <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-800 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700/60">
-                            Clase {asig.numeroClase}
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 border border-zinc-200 dark:border-zinc-700/60 shadow-2xs">
+                        <CalendarDays className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2.5">
+                          <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 text-base leading-tight">
+                            Año {grupo.anio}
+                          </h3>
+                          <span className="font-mono text-xs px-2.5 py-0.5 rounded-full bg-zinc-100 text-zinc-700 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700/60 font-medium">
+                            {grupo.totalAsignaturas} {grupo.totalAsignaturas === 1 ? "asignatura" : "asignaturas"}
                           </span>
-                        )}
+                        </div>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                          {isOpen ? "Haz clic para colapsar este año" : "Haz clic para expandir las asignaturas de este año"}
+                        </p>
                       </div>
-                      <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5 mt-0.5">
-                        <GraduationCap className="w-3.5 h-3.5 text-zinc-400" />
-                        <span>3 cortes (35%, 35%, 30%)</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-zinc-600 dark:text-zinc-300 text-xs">
-                      {asig.programa}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono bg-zinc-100 border border-zinc-200 text-zinc-700 dark:bg-zinc-800/80 dark:border-zinc-700/60 dark:text-zinc-300">
-                        <CalendarDays className="w-3 h-3 text-zinc-400" />
-                        {periodosMap.get(asig.periodoId) || `ID #${asig.periodoId}`}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-medium text-zinc-400 dark:text-zinc-500 hidden sm:inline">
+                        {isOpen ? "Colapsar" : "Expandir"}
                       </span>
-                    </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5">
-                        <Link
-                          href={`/asignaturas/${asig.id}`}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:text-zinc-200 dark:border-zinc-700/60 text-xs font-medium rounded-lg transition-colors"
-                        >
-                          <span>Estudiantes</span>
-                          <ArrowRight className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
-                        </Link>
-                        <button
-                          onClick={() => handleAbrirModalEdicion(asig)}
-                          className="text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-50 dark:hover:bg-zinc-800/50 p-1.5 rounded-lg transition-colors"
-                          title="Editar asignatura"
-                        >
-                          <Pencil className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => handleEliminarAsignatura(asig)}
-                          className="text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:text-zinc-500 dark:hover:text-rose-400 dark:hover:bg-rose-500/10 p-1.5 rounded-lg transition-colors"
-                          title="Eliminar asignatura"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <div className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 transition-colors">
+                        <ChevronDown
+                          className={`w-4 h-4 transition-transform duration-200 ${
+                            isOpen ? "rotate-180 text-zinc-700 dark:text-zinc-200" : ""
+                          }`}
+                        />
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </button>
+
+                  {/* Tabla de asignaturas del Año */}
+                  {isOpen && (
+                    <div className="border-t border-zinc-200 dark:border-zinc-800 overflow-x-auto animate-in fade-in duration-150">
+                      <table className="w-full text-left text-sm">
+                        <thead className="bg-zinc-50/80 text-zinc-500 dark:bg-zinc-900/80 dark:text-zinc-400 text-xs uppercase font-medium border-b border-zinc-200 dark:border-zinc-800">
+                          <tr>
+                            <th className="px-6 py-3 w-20">ID</th>
+                            <th className="px-6 py-3">Asignatura</th>
+                            <th className="px-6 py-3">Programa</th>
+                            <th className="px-6 py-3">Periodo</th>
+                            <th className="px-6 py-3 text-right">Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800/60">
+                          {grupo.asignaturas.map((asig) => (
+                            <tr
+                              key={asig.id}
+                              className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/30 transition-colors"
+                            >
+                              <td className="px-6 py-4 font-mono text-xs text-zinc-400 dark:text-zinc-500">
+                                #{asig.id}
+                              </td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                                    {asig.nombre}
+                                  </span>
+                                  {asig.numeroClase && (
+                                    <span className="font-mono text-[11px] font-semibold px-2 py-0.5 rounded-md bg-zinc-100 text-zinc-800 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-200 dark:border-zinc-700/60">
+                                      Clase {asig.numeroClase}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1.5 mt-0.5">
+                                  <GraduationCap className="w-3.5 h-3.5 text-zinc-400" />
+                                  <span>3 cortes (35%, 35%, 30%)</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 text-zinc-600 dark:text-zinc-300 text-xs">
+                                {asig.programa}
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono bg-zinc-100 border border-zinc-200 text-zinc-700 dark:bg-zinc-800/80 dark:border-zinc-700/60 dark:text-zinc-300">
+                                  <CalendarDays className="w-3 h-3 text-zinc-400" />
+                                  {periodosMap.get(asig.periodoId) || `ID #${asig.periodoId}`}
+                                </span>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <Link
+                                    href={`/asignaturas/${asig.id}`}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:text-zinc-200 dark:border-zinc-700/60 text-xs font-medium rounded-lg transition-colors"
+                                  >
+                                    <span>Estudiantes</span>
+                                    <ArrowRight className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
+                                  </Link>
+                                  <button
+                                    onClick={() => handleAbrirModalEdicion(asig)}
+                                    className="text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-50 dark:hover:bg-zinc-800/50 p-1.5 rounded-lg transition-colors"
+                                    title="Editar asignatura"
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleEliminarAsignatura(asig)}
+                                    className="text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:text-zinc-500 dark:hover:text-rose-400 dark:hover:bg-rose-500/10 p-1.5 rounded-lg transition-colors"
+                                    title="Eliminar asignatura"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

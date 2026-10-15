@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, memo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { db, type Actividad } from "@/lib/db";
 import {
@@ -40,7 +40,72 @@ import {
   BarChart3,
   FileCheck2,
   Loader2,
+  Lock,
+  Unlock,
 } from "lucide-react";
+
+interface BadgeDefinitivaAnimadaProps {
+  detalleDef: DetalleDefinitivaCorte | null;
+}
+
+/**
+ * Subcomponente memoizado para renderizar la nota definitiva con transición visual suave y
+ * micro-destello luminoso al detectar cambios en tiempo real.
+ */
+const BadgeDefinitivaAnimada = memo(function BadgeDefinitivaAnimada({
+  detalleDef,
+}: BadgeDefinitivaAnimadaProps) {
+  const [animando, setAnimando] = useState(false);
+  const prevDefRef = useRef<number | null>(detalleDef?.definitiva ?? null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    const currentDef = detalleDef?.definitiva ?? null;
+    // Si la definitiva previa existía y cambió numéricamente respecto a la actual
+    if (
+      prevDefRef.current !== null &&
+      currentDef !== null &&
+      prevDefRef.current !== currentDef
+    ) {
+      setAnimando(true);
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      timeoutRef.current = setTimeout(() => {
+        setAnimando(false);
+      }, 400);
+    }
+    prevDefRef.current = currentDef;
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [detalleDef?.definitiva]);
+
+  if (!detalleDef) {
+    return <span className="text-zinc-400">—</span>;
+  }
+
+  const tooltipTitle = detalleDef.esArrastre
+    ? `Aprobado por aproximación decimal (${detalleDef.definitivaExacta.toFixed(2)} → ${detalleDef.definitiva.toFixed(1)})`
+    : detalleDef.aprobado
+    ? "Aprobado sólido (≥ 3.0)"
+    : "Reprobado (< 3.0)";
+
+  return (
+    <span
+      title={tooltipTitle}
+      className={`inline-block px-2.5 py-0.5 rounded font-bold transition-all duration-300 ease-out select-none ${
+        animando
+          ? "scale-110 ring-2 ring-indigo-400/70 dark:ring-indigo-500/70 shadow-sm"
+          : "scale-100"
+      } ${obtenerClasesSemaforoNota(
+        detalleDef.definitiva,
+        detalleDef.definitivaExacta,
+        "badge"
+      )}`}
+    >
+      {detalleDef.definitiva.toFixed(1)}
+    </span>
+  );
+});
 
 interface VistaCorteProps {
   asignaturaId: number;
@@ -109,6 +174,21 @@ export function VistaCorte({
     [corteId]
   );
 
+  const isBloqueado = Boolean(corteActual?.bloqueado);
+  const [isTogglingBloqueo, setIsTogglingBloqueo] = useState(false);
+
+  const handleToggleBloqueo = async () => {
+    try {
+      setIsTogglingBloqueo(true);
+      await db.cortes.update(corteId, { bloqueado: !isBloqueado });
+    } catch (err) {
+      console.error("Error al alternar bloqueo de corte:", err);
+      alert("No se pudo actualizar el estado de bloqueo del corte.");
+    } finally {
+      setIsTogglingBloqueo(false);
+    }
+  };
+
   const rasAsignatura = useLiveQuery(
     () => db.resultados_aprendizaje.where("asignaturaId").equals(asignaturaId).toArray(),
     [asignaturaId]
@@ -120,6 +200,7 @@ export function VistaCorte({
   }, [rasAsignatura, corteActual?.rasEvaluados]);
 
   const handleToggleRA = async (raId: number) => {
+    if (isBloqueado) return;
     const actuales = corteActual?.rasEvaluados || [];
     const nuevos = actuales.includes(raId)
       ? actuales.filter((id) => id !== raId)
@@ -172,6 +253,7 @@ export function VistaCorte({
   // Manejar creación de actividad regular
   const handleCrearActividad = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isBloqueado) return;
     setErrorActividad(null);
 
     const trimmedNombre = nombreActividad.trim();
@@ -215,6 +297,7 @@ export function VistaCorte({
 
   // Manejar creación de actividad de bonificación directa
   const handleCrearBonificacion = async () => {
+    if (isBloqueado) return;
     try {
       setIsSubmittingBono(true);
       await db.actividades.add({
@@ -233,7 +316,7 @@ export function VistaCorte({
 
   // Iniciar edición de actividad existente (Mejora 1)
   const handleIniciarEdicionActividad = (act: Actividad) => {
-    if (!act.id) return;
+    if (isBloqueado || !act.id) return;
     setEditingActividadId(act.id);
     setEditActividadNombre(act.nombre);
     setEditActividadPorcentaje(String(act.porcentaje));
@@ -249,6 +332,7 @@ export function VistaCorte({
 
   // Guardar edición de actividad existente (Mejora 1)
   const handleGuardarEdicionActividad = async (actividadId: number) => {
+    if (isBloqueado) return;
     setEditActividadError(null);
     const trimmedNombre = editActividadNombre.trim();
 
@@ -305,7 +389,7 @@ export function VistaCorte({
 
   // Eliminar actividad y sus notas
   const handleEliminarActividad = async (actividad: Actividad) => {
-    if (!actividad.id) return;
+    if (isBloqueado || !actividad.id) return;
     const tipo = actividad.esBonificacion ? "la bonificación" : "la actividad";
     const infoPeso = actividad.esBonificacion ? "(Bono Directo)" : `(${actividad.porcentaje}%)`;
     const confirmacion = window.confirm(
@@ -334,6 +418,7 @@ export function VistaCorte({
     actividadId: number,
     nuevoValorStr: string
   ) => {
+    if (isBloqueado) return;
     const trimmed = nuevoValorStr.trim();
 
     if (trimmed === "") {
@@ -485,6 +570,12 @@ export function VistaCorte({
   const handleSeleccionarExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (isBloqueado) {
+      alert("El corte actual se encuentra bloqueado para modificaciones.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
 
     try {
       setIsImportingExcel(true);
@@ -652,7 +743,8 @@ export function VistaCorte({
           <button
             type="button"
             onClick={() => setModalRAsAbierto(true)}
-            className="px-2.5 py-1 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-200 dark:border-zinc-700 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 self-start sm:self-auto shadow-2xs"
+            disabled={isBloqueado}
+            className="px-2.5 py-1 text-xs font-medium text-zinc-700 bg-zinc-100 hover:bg-zinc-200/80 border border-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 dark:text-zinc-200 dark:border-zinc-700 rounded-lg transition-colors flex items-center gap-1.5 shrink-0 self-start sm:self-auto shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Target className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
             <span>Vincular RAs</span>
@@ -676,7 +768,7 @@ export function VistaCorte({
                   placeholder="Ej. Quiz 1, Taller de Algoritmos, Parcial 20%"
                   value={nombreActividad}
                   onChange={(e) => setNombreActividad(e.target.value)}
-                  disabled={porcentajeCompleto}
+                  disabled={porcentajeCompleto || isBloqueado}
                   className="w-full px-3 py-2 text-xs rounded-lg bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-400 dark:bg-zinc-950 dark:border-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-zinc-600 dark:focus:ring-zinc-600 disabled:opacity-50 transition-colors"
                 />
               </div>
@@ -700,7 +792,7 @@ export function VistaCorte({
                       setPorcentajeActividad(clean);
                     }
                   }}
-                  disabled={porcentajeCompleto}
+                  disabled={porcentajeCompleto || isBloqueado}
                   className="w-full px-3 py-2 text-xs font-mono rounded-lg bg-white border border-zinc-300 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-500 focus:ring-1 focus:ring-zinc-400 dark:bg-zinc-950 dark:border-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-zinc-600 dark:focus:ring-zinc-600 disabled:opacity-50 transition-colors"
                 />
               </div>
@@ -708,8 +800,8 @@ export function VistaCorte({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="submit"
-                  disabled={isSubmittingActividad || porcentajeCompleto}
-                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-900 disabled:opacity-50 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 shrink-0 shadow-sm shadow-zinc-900/10 dark:shadow-none"
+                  disabled={isSubmittingActividad || porcentajeCompleto || isBloqueado}
+                  className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-900 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 shrink-0 shadow-sm shadow-zinc-900/10 dark:shadow-none"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Agregar Actividad</span>
@@ -718,8 +810,8 @@ export function VistaCorte({
                 <button
                   type="button"
                   onClick={handleCrearBonificacion}
-                  disabled={isSubmittingBono}
-                  className="px-3.5 py-2 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:hover:bg-amber-950/60 dark:text-amber-300 disabled:opacity-50 text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 shrink-0 shadow-2xs"
+                  disabled={isSubmittingBono || isBloqueado}
+                  className="px-3.5 py-2 border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 dark:border-amber-800/60 dark:bg-amber-950/30 dark:hover:bg-amber-950/60 dark:text-amber-300 disabled:opacity-40 disabled:cursor-not-allowed text-xs font-medium rounded-lg transition-colors flex items-center justify-center gap-1.5 shrink-0 shadow-2xs"
                   title="Añadir columna para sumar décimas directas a la definitiva"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
@@ -816,31 +908,35 @@ export function VistaCorte({
                       >
                         <Sparkles className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
                         <span
-                          onClick={() => handleIniciarEdicionActividad(act)}
-                          className="font-medium cursor-pointer hover:underline"
-                          title="Haz clic para editar nombre"
+                          onClick={() => !isBloqueado && handleIniciarEdicionActividad(act)}
+                          className={`font-medium ${isBloqueado ? "cursor-default" : "cursor-pointer hover:underline"}`}
+                          title={isBloqueado ? undefined : "Haz clic para editar nombre"}
                         >
                           {act.nombre}
                         </span>
                         <span className="font-mono text-[10px] px-1.5 py-0.2 rounded bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 font-semibold uppercase tracking-wider">
                           Bono Directo
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => handleIniciarEdicionActividad(act)}
-                          className="text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200 p-0.5 rounded transition-colors ml-0.5"
-                          title="Editar nombre"
-                        >
-                          <Pencil className="w-3 h-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleEliminarActividad(act)}
-                          className="text-amber-600 hover:text-rose-500 dark:text-amber-400 dark:hover:text-rose-400 p-0.5 rounded transition-colors"
-                          title="Eliminar bonificación y sus registros"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                        {!isBloqueado && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleIniciarEdicionActividad(act)}
+                              className="text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200 p-0.5 rounded transition-colors ml-0.5"
+                              title="Editar nombre"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleEliminarActividad(act)}
+                              className="text-amber-600 hover:text-rose-500 dark:text-amber-400 dark:hover:text-rose-400 p-0.5 rounded transition-colors"
+                              title="Eliminar bonificación y sus registros"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </>
+                        )}
                       </div>
                     );
                   }
@@ -851,31 +947,35 @@ export function VistaCorte({
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-zinc-100 border border-zinc-200 text-zinc-800 dark:bg-zinc-800/80 dark:border-zinc-700/60 dark:text-zinc-200 text-xs shadow-2xs group hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors"
                     >
                       <span
-                        onClick={() => handleIniciarEdicionActividad(act)}
-                        className="font-medium cursor-pointer hover:underline"
-                        title="Haz clic para editar"
+                        onClick={() => !isBloqueado && handleIniciarEdicionActividad(act)}
+                        className={`font-medium ${isBloqueado ? "cursor-default" : "cursor-pointer hover:underline"}`}
+                        title={isBloqueado ? undefined : "Haz clic para editar"}
                       >
                         {act.nombre}
                       </span>
                       <span className="font-mono text-[11px] px-1 py-0.2 rounded bg-zinc-200/80 dark:bg-zinc-700/80 text-zinc-700 dark:text-zinc-300 font-semibold">
                         {act.porcentaje}%
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => handleIniciarEdicionActividad(act)}
-                        className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 p-0.5 rounded transition-colors ml-0.5"
-                        title="Editar nombre y porcentaje"
-                      >
-                        <Pencil className="w-3 h-3" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleEliminarActividad(act)}
-                        className="text-zinc-400 hover:text-rose-500 p-0.5 rounded transition-colors"
-                        title="Eliminar actividad y sus notas"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
+                      {!isBloqueado && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => handleIniciarEdicionActividad(act)}
+                            className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 p-0.5 rounded transition-colors ml-0.5"
+                            title="Editar nombre y porcentaje"
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleEliminarActividad(act)}
+                            className="text-zinc-400 hover:text-rose-500 p-0.5 rounded transition-colors"
+                            title="Eliminar actividad y sus notas"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </>
+                      )}
                     </div>
                   );
                 })}
@@ -915,6 +1015,25 @@ export function VistaCorte({
               className="hidden"
             />
 
+            {/* Botón Candado (Bloquear/Desbloquear Corte) - Iconográfico Minimalista */}
+            <button
+              type="button"
+              onClick={handleToggleBloqueo}
+              disabled={isTogglingBloqueo}
+              title="Bloquear/Desbloquear corte"
+              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors border shadow-2xs shrink-0 ${
+                isBloqueado
+                  ? "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/40 dark:hover:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60"
+                  : "bg-white hover:bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:text-zinc-200 dark:border-zinc-700/60"
+              }`}
+            >
+              {isBloqueado ? (
+                <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              ) : (
+                <Unlock className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
+              )}
+            </button>
+
             {/* Botón Descargar Plantilla Excel */}
             <button
               type="button"
@@ -931,9 +1050,13 @@ export function VistaCorte({
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={isImportingExcel || !actividades || actividades.length === 0}
+              disabled={isImportingExcel || isBloqueado || !actividades || actividades.length === 0}
               className="px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:border-zinc-700/60 dark:text-zinc-200 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs disabled:opacity-40"
-              title="Importar calificaciones masivamente desde un archivo Excel (.xlsx)"
+              title={
+                isBloqueado
+                  ? "Desbloquea el corte para poder importar calificaciones"
+                  : "Importar calificaciones masivamente desde un archivo Excel (.xlsx)"
+              }
             >
               <FileUp className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
               <span>{isImportingExcel ? "Importando..." : "Importar Notas Excel"}</span>
@@ -1040,6 +1163,19 @@ export function VistaCorte({
             </div>
           </div>
         </div>
+
+        {/* Banner informativo cuando el corte está bloqueado */}
+        {isBloqueado && (
+          <div className="flex items-center gap-2.5 px-6 py-2.5 bg-amber-50/80 dark:bg-amber-950/30 border-b border-amber-200/80 dark:border-amber-800/50 text-amber-900 dark:text-amber-300 text-xs">
+            <Lock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+            <span className="font-semibold">
+              Corte bloqueado:
+            </span>
+            <span className="text-amber-800/90 dark:text-amber-300/90">
+              Las calificaciones y actividades están en modo de solo lectura. Para habilitar la edición, haz clic en &quot;Corte Bloqueado&quot; en la barra superior.
+            </span>
+          </div>
+        )}
 
         {/* Contenido de la Tabla con Columnas Sticky */}
         {!estudiantes || estudiantes.length === 0 ? (
@@ -1179,18 +1315,22 @@ export function VistaCorte({
                               inputMode="decimal"
                               placeholder={isBono ? "+0.0" : "0.0"}
                               value={displayValue}
-                              onChange={(e) =>
+                              readOnly={isBloqueado}
+                              onChange={(e) => {
+                                if (isBloqueado) return;
                                 handleNotaInputChange(
                                   cellKey,
                                   e.target.value,
                                   estudiante.id!,
                                   act.id!
-                                )
-                              }
-                              onKeyDown={(e) =>
-                                handleNotaKeyDown(e, studentIndex, act.id!)
-                              }
+                                );
+                              }}
+                              onKeyDown={(e) => {
+                                if (isBloqueado) return;
+                                handleNotaKeyDown(e, studentIndex, act.id!);
+                              }}
                               onBlur={() => {
+                                if (isBloqueado) return;
                                 // Normalizar en blur si termina en "."
                                 if (displayValue.endsWith(".")) {
                                   const normalized = displayValue.slice(0, -1);
@@ -1208,10 +1348,12 @@ export function VistaCorte({
                                   return next;
                                 });
                               }}
-                              className={`w-full text-center px-2 py-1.5 font-mono text-xs rounded border border-transparent hover:border-zinc-300 dark:hover:border-zinc-700 focus:outline-none transition-colors ${
-                                isBono
-                                  ? "text-amber-900 dark:text-amber-200 font-semibold focus:border-amber-400 dark:focus:border-amber-500 bg-amber-50/20 focus:bg-amber-50/60 dark:focus:bg-amber-950/40"
-                                  : "text-zinc-900 dark:text-zinc-100 focus:border-zinc-500 dark:focus:border-zinc-400 bg-transparent focus:bg-white dark:focus:bg-zinc-950"
+                              className={`w-full text-center px-2 py-1.5 font-mono text-xs rounded border transition-colors ${
+                                isBloqueado
+                                  ? "cursor-not-allowed select-none bg-zinc-100/70 dark:bg-zinc-800/40 text-zinc-500 dark:text-zinc-400 border-transparent hover:border-transparent focus:outline-none focus:ring-0 opacity-80"
+                                  : isBono
+                                  ? "border-transparent hover:border-zinc-300 dark:hover:border-zinc-700 text-amber-900 dark:text-amber-200 font-semibold focus:border-amber-400 dark:focus:border-amber-500 bg-amber-50/20 focus:bg-amber-50/60 dark:focus:bg-amber-950/40 focus:outline-none"
+                                  : "border-transparent hover:border-zinc-300 dark:hover:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:border-zinc-500 dark:focus:border-zinc-400 bg-transparent focus:bg-white dark:focus:bg-zinc-950 focus:outline-none"
                               }`}
                             />
                           </td>
@@ -1221,22 +1363,7 @@ export function VistaCorte({
                       {/* Sticky 4: Definitiva del Corte (Sticky a la derecha) */}
                       <td className="sticky right-0 z-10 w-36 min-w-[130px] px-4 py-2.5 text-center font-mono font-bold bg-zinc-50 group-hover:bg-zinc-100 dark:bg-zinc-950 dark:group-hover:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-800 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.5)]">
                         {detalleDef !== null ? (
-                          <span
-                            title={
-                              detalleDef.esArrastre
-                                ? `Aprobado por aproximación decimal (${detalleDef.definitivaExacta.toFixed(2)} → ${detalleDef.definitiva.toFixed(1)})`
-                                : detalleDef.aprobado
-                                ? "Aprobado sólido (≥ 3.0)"
-                                : "Reprobado (< 3.0)"
-                            }
-                            className={`inline-block px-2.5 py-0.5 rounded font-bold ${obtenerClasesSemaforoNota(
-                              detalleDef.definitiva,
-                              detalleDef.definitivaExacta,
-                              "badge"
-                            )}`}
-                          >
-                            {detalleDef.definitiva.toFixed(1)}
-                          </span>
+                          <BadgeDefinitivaAnimada detalleDef={detalleDef} />
                         ) : (
                           <span className="text-zinc-400">—</span>
                         )}
