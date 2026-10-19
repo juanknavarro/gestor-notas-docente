@@ -68,9 +68,32 @@ export interface ResultadoAprendizaje {
   descripcion: string; // Redacción detallada de la competencia
 }
 
+export interface EscalaCalificaciones {
+  bajoMax: number; // Defecto: 2.9 (Rango Bajo: 0.0 a bajoMax)
+  aceptableMin: number; // Defecto: 3.0
+  aceptableMax: number; // Defecto: 3.9 (Rango Aceptable: aceptableMin a aceptableMax)
+  competenteMin: number; // Defecto: 4.0
+  competenteMax: number; // Defecto: 4.5 (Rango Competente: competenteMin a competenteMax)
+  excelenteMin: number; // Defecto: 4.6
+  excelenteMax: number; // Fijo: 5.0 (Rango Excelente: excelenteMin a 5.0)
+  umbralSobresaliente: number; // Defecto: 4.6 (Para el formato de Mortalidad Académica)
+}
+
+export const ESCALA_DEFAULT: EscalaCalificaciones = {
+  bajoMax: 2.9,
+  aceptableMin: 3.0,
+  aceptableMax: 3.9,
+  competenteMin: 4.0,
+  competenteMax: 4.5,
+  excelenteMin: 4.6,
+  excelenteMax: 5.0,
+  umbralSobresaliente: 4.6,
+};
+
 export interface ConfiguracionDocente {
   id: number; // 1 (registro singleton)
   nombreDocente: string;
+  escala?: EscalaCalificaciones;
 }
 
 export class GestorAcademicoDB extends Dexie {

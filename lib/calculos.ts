@@ -1,4 +1,5 @@
-import type { Actividad } from "./db";
+import type { Actividad, EscalaCalificaciones } from "./db";
+import { ESCALA_DEFAULT } from "./db";
 
 export type CategoriaDesempeno = "Bajo" | "Aceptable" | "Competente" | "Excelente";
 
@@ -159,15 +160,19 @@ export function obtenerClasesSemaforoNota(
 /**
  * Clasifica la calificación definitiva de un estudiante en una de las 4 categorías
  * de Resultados de Aprendizaje institucional:
- * - Bajo: 0.0 a 2.9 (Reprobado)
- * - Aceptable: 3.0 a 3.9 (Aprobado)
- * - Competente: 4.0 a 4.5 (Aprobado)
- * - Excelente: 4.6 a 5.0 (Aprobado)
+ * - Bajo: 0.0 a bajoMax (Reprobado)
+ * - Aceptable: aceptableMin a aceptableMax (Aprobado)
+ * - Competente: competenteMin a competenteMax (Aprobado)
+ * - Excelente: excelenteMin a 5.0 (Aprobado)
  */
-export function clasificarResultadoAprendizaje(nota: number): CategoriaDesempeno {
-  if (nota < 3.0) return "Bajo";
-  if (nota <= 3.9) return "Aceptable";
-  if (nota <= 4.5) return "Competente";
+export function clasificarResultadoAprendizaje(
+  nota: number,
+  escala: EscalaCalificaciones = ESCALA_DEFAULT
+): CategoriaDesempeno {
+  const esc = escala ?? ESCALA_DEFAULT;
+  if (nota <= esc.bajoMax) return "Bajo";
+  if (nota <= esc.aceptableMax) return "Aceptable";
+  if (nota <= esc.competenteMax) return "Competente";
   return "Excelente";
 }
 
@@ -285,7 +290,8 @@ export function calcularDefinitivaAsignatura(
   defC3: number | null,
   peso1: number = 35,
   peso2: number = 35,
-  peso3: number = 30
+  peso3: number = 30,
+  escala?: EscalaCalificaciones
 ): DefinitivaAsignatura {
   const c1 = defC1 ?? 0;
   const c2 = defC2 ?? 0;
@@ -306,7 +312,7 @@ export function calcularDefinitivaAsignatura(
     aporteC2,
     aporteC3,
     aprobado: notaFinal >= 3.0,
-    categoria: clasificarResultadoAprendizaje(notaFinal),
+    categoria: clasificarResultadoAprendizaje(notaFinal, escala),
     esArrastre: notaFinalExacta < 3.0 && notaFinal >= 3.0,
     corte1Presente: defC1 !== null,
     corte2Presente: defC2 !== null,

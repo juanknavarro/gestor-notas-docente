@@ -304,9 +304,10 @@ export async function generarExcelMortalidad(datos: DatosInformeCorte): Promise<
   worksheet.getRow(13).height = 18;
 
   // ----------------------------------------------------
-  // Paso 2: Tabla de Estudiantes Sobresalientes (definitivaNumero >= 4.6)
+  // Paso 2: Tabla de Estudiantes Sobresalientes (definitivaNumero >= umbral)
   // ----------------------------------------------------
-  const sobresalientes = datos.estudiantes.filter((e) => e.definitivaNumero >= 4.6);
+  const umbral = datos.umbralSobresaliente ?? 4.6;
+  const sobresalientes = datos.estudiantes.filter((e) => e.definitivaNumero >= umbral);
 
   let currentRow = 15;
 
@@ -330,7 +331,7 @@ export async function generarExcelMortalidad(datos: DatosInformeCorte): Promise<
 
     worksheet.mergeCells(`B${currentRow}:G${currentRow}`);
     const cellB = worksheet.getCell(`B${currentRow}`);
-    cellB.value = "No se registraron estudiantes con calificación superior o igual a 4.6";
+    cellB.value = `No se registraron estudiantes con calificación superior o igual a ${umbral.toFixed(1)}`;
     cellB.alignment = { vertical: "middle", horizontal: "left" };
     cellB.font = { name: "Arial", size: 9, italic: true, color: { argb: "FF6B7280" } };
 

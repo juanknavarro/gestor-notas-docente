@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db } from "@/lib/db";
+import { db, ESCALA_DEFAULT } from "@/lib/db";
 import {
   calcularDefinitivaCorte,
   clasificarResultadoAprendizaje,
@@ -25,6 +25,10 @@ import {
 import Link from "next/link";
 
 export default function ReportesPage() {
+  // Configuración global y escala institucional
+  const configDocente = useLiveQuery(() => db.configuracion.get(1));
+  const escala = configDocente?.escala ?? ESCALA_DEFAULT;
+
   // 1. Estados para los selectores en cascada
   const [selectedPeriodoId, setSelectedPeriodoId] = useState<number | null>(null);
   const [selectedAsignaturaId, setSelectedAsignaturaId] = useState<number | null>(null);
@@ -123,7 +127,7 @@ export default function ReportesPage() {
     for (const est of estudiantes) {
       const def = calcularDefinitivaCorte(est.id!, actividades, notasMap, pesoCorte);
       const definitiva = def !== null ? def : 0;
-      const categoria = clasificarResultadoAprendizaje(definitiva);
+      const categoria = clasificarResultadoAprendizaje(definitiva, escala);
 
       estudiantesConNota.push({
         estudianteId: est.id!,
@@ -183,7 +187,7 @@ export default function ReportesPage() {
         porcentaje: pctExcelente,
       },
     };
-  }, [datosReporte]);
+  }, [datosReporte, escala]);
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-6">
@@ -517,7 +521,7 @@ export default function ReportesPage() {
                     </h4>
                   </div>
                   <span className="font-mono text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/50 dark:text-rose-300">
-                    0.0 a 2.9
+                    0.0 a {escala.bajoMax.toFixed(1)}
                   </span>
                 </div>
 
@@ -575,7 +579,7 @@ export default function ReportesPage() {
                     </h4>
                   </div>
                   <span className="font-mono text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
-                    3.0 a 3.9
+                    {escala.aceptableMin.toFixed(1)} a {escala.aceptableMax.toFixed(1)}
                   </span>
                 </div>
 
@@ -633,7 +637,7 @@ export default function ReportesPage() {
                     </h4>
                   </div>
                   <span className="font-mono text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-300">
-                    4.0 a 4.5
+                    {escala.competenteMin.toFixed(1)} a {escala.competenteMax.toFixed(1)}
                   </span>
                 </div>
 
@@ -691,7 +695,7 @@ export default function ReportesPage() {
                     </h4>
                   </div>
                   <span className="font-mono text-[10px] uppercase font-semibold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300">
-                    4.6 a 5.0
+                    {escala.excelenteMin.toFixed(1)} a 5.0
                   </span>
                 </div>
 

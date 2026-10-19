@@ -1,4 +1,4 @@
-import { db, type ResultadoAprendizaje } from "./db";
+import { db, type ResultadoAprendizaje, ESCALA_DEFAULT } from "./db";
 import {
   calcularDefinitivaCorte,
   clasificarResultadoAprendizaje,
@@ -17,6 +17,7 @@ export interface EstudianteReporteCorte {
 }
 
 export interface DatosInformeCorte {
+  umbralSobresaliente?: number;
   asignatura: {
     id: number;
     nombre: string;
@@ -65,9 +66,11 @@ export async function prepararDatosInformeCorte(
   const periodo = await db.periodos.get(asignatura.periodoId);
   const periodoNombre = periodo?.nombre || "Sin Periodo";
 
-  // 3. Obtener Configuración Global del Docente
+  // 3. Obtener Configuración Global del Docente y Escala
   const configDocente = await db.configuracion.get(1);
   const docenteNombre = configDocente?.nombreDocente?.trim() || "Docente Sin Asignar";
+  const escala = configDocente?.escala ?? ESCALA_DEFAULT;
+  const umbralSobresaliente = escala.umbralSobresaliente;
 
   // 4. Obtener RAs cruzados desde rasEvaluados
   const rasIds = corte.rasEvaluados || [];
@@ -128,7 +131,7 @@ export async function prepararDatosInformeCorte(
 
     const notaEfectiva = definitiva ?? 0;
     const aprobado = notaEfectiva >= 3.0;
-    const categoria = clasificarResultadoAprendizaje(notaEfectiva);
+    const categoria = clasificarResultadoAprendizaje(notaEfectiva, escala);
 
     if (definitiva !== null) {
       sumaNotas += definitiva;
@@ -176,6 +179,7 @@ export async function prepararDatosInformeCorte(
     totalCalificados > 0 ? Number((sumaNotas / totalCalificados).toFixed(2)) : 0;
 
   return {
+    umbralSobresaliente,
     asignatura: {
       id: asignatura.id!,
       nombre: asignatura.nombre,

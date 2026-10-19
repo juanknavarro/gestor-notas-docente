@@ -1,8 +1,14 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, type ProgramaAcademico, limpiarBaseDeDatosLocal } from "@/lib/db";
+import {
+  db,
+  type ProgramaAcademico,
+  type EscalaCalificaciones,
+  ESCALA_DEFAULT,
+  limpiarBaseDeDatosLocal,
+} from "@/lib/db";
 import {
   generarBackupJSON,
   validarBackupJSON,
@@ -34,6 +40,9 @@ import {
   Check,
   User,
   Loader2,
+  SlidersHorizontal,
+  RotateCcw,
+  Award,
 } from "lucide-react";
 
 export default function ConfiguracionPage() {
@@ -58,7 +67,12 @@ export default function ConfiguracionPage() {
 
     try {
       setIsSavingDocente(true);
-      await db.configuracion.put({ id: 1, nombreDocente: trimmed });
+      const actualConfig = await db.configuracion.get(1);
+      await db.configuracion.put({
+        ...actualConfig,
+        id: 1,
+        nombreDocente: trimmed,
+      });
       setDocenteExito(true);
       setTimeout(() => setDocenteExito(false), 3000);
     } catch (err) {
@@ -66,6 +80,163 @@ export default function ConfiguracionPage() {
     } finally {
       setIsSavingDocente(false);
     }
+  };
+
+  // Estados para Escala de Calificaciones y Umbrales
+  const [escalaInputs, setEscalaInputs] = useState({
+    bajoMax: "2.9",
+    aceptableMin: "3.0",
+    aceptableMax: "3.9",
+    competenteMin: "4.0",
+    competenteMax: "4.5",
+    excelenteMin: "4.6",
+    umbralSobresaliente: "4.6",
+  });
+  const [isSavingEscala, setIsSavingEscala] = useState(false);
+  const [escalaExito, setEscalaExito] = useState(false);
+  const [escalaResetMsg, setEscalaResetMsg] = useState(false);
+
+  useEffect(() => {
+    const esc = configDocente?.escala ?? ESCALA_DEFAULT;
+    setEscalaInputs({
+      bajoMax: esc.bajoMax.toString(),
+      aceptableMin: esc.aceptableMin.toString(),
+      aceptableMax: esc.aceptableMax.toString(),
+      competenteMin: esc.competenteMin.toString(),
+      competenteMax: esc.competenteMax.toString(),
+      excelenteMin: esc.excelenteMin.toString(),
+      umbralSobresaliente: esc.umbralSobresaliente.toString(),
+    });
+  }, [configDocente]);
+
+  const validacionEscala = useMemo(() => {
+    const bMax = parseFloat(escalaInputs.bajoMax.replace(/,/g, "."));
+    const aMin = parseFloat(escalaInputs.aceptableMin.replace(/,/g, "."));
+    const aMax = parseFloat(escalaInputs.aceptableMax.replace(/,/g, "."));
+    const cMin = parseFloat(escalaInputs.competenteMin.replace(/,/g, "."));
+    const cMax = parseFloat(escalaInputs.competenteMax.replace(/,/g, "."));
+    const eMin = parseFloat(escalaInputs.excelenteMin.replace(/,/g, "."));
+    const uSob = parseFloat(escalaInputs.umbralSobresaliente.replace(/,/g, "."));
+
+    if (
+      isNaN(bMax) ||
+      isNaN(aMin) ||
+      isNaN(aMax) ||
+      isNaN(cMin) ||
+      isNaN(cMax) ||
+      isNaN(eMin) ||
+      isNaN(uSob)
+    ) {
+      return { esValido: false, error: "Todos los campos de la escala deben contener valores numéricos válidos." };
+    }
+
+    if (bMax < 0 || aMin < 0 || aMax < 0 || cMin < 0 || cMax < 0 || eMin < 0 || uSob < 0) {
+      return { esValido: false, error: "Las notas no pueden ser inferiores a 0.0." };
+    }
+
+    if (bMax > 5.0 || aMin > 5.0 || aMax > 5.0 || cMin > 5.0 || cMax > 5.0 || eMin > 5.0 || uSob > 5.0) {
+      return { esValido: false, error: "Las notas no pueden superar la calificación máxima institucional de 5.0." };
+    }
+
+    if (!(bMax < aMin)) {
+      return {
+        esValido: false,
+        error: `Solapamiento detectado: El límite superior de Bajo (${bMax}) debe ser estrictamente menor que el inicio de Aceptable (${aMin}).`,
+      };
+    }
+
+    if (!(aMin <= aMax)) {
+      return {
+        esValido: false,
+        error: `Rango inconsistente: El inicio de Aceptable (${aMin}) no puede ser mayor que su límite (${aMax}).`,
+      };
+    }
+
+    if (!(aMax < cMin)) {
+      return {
+        esValido: false,
+        error: `Solapamiento detectado: El límite superior de Aceptable (${aMax}) debe ser menor que el inicio de Competente (${cMin}).`,
+      };
+    }
+
+    if (!(cMin <= cMax)) {
+      return {
+        esValido: false,
+        error: `Rango inconsistente: El inicio de Competente (${cMin}) no puede ser mayor que su límite (${cMax}).`,
+      };
+    }
+
+    if (!(cMax < eMin)) {
+      return {
+        esValido: false,
+        error: `Solapamiento detectado: El límite superior de Competente (${cMax}) debe ser menor que el inicio de Excelente (${eMin}).`,
+      };
+    }
+
+    if (eMin > 5.0) {
+      return {
+        esValido: false,
+        error: `Rango inconsistente: El inicio de Excelente (${eMin}) no puede superar 5.0.`,
+      };
+    }
+
+    if (uSob < 3.0 || uSob > 5.0) {
+      return {
+        esValido: false,
+        error: "El umbral para estudiantes sobresalientes debe estar en el rango de notas aprobatorias (entre 3.0 y 5.0).",
+      };
+    }
+
+    return {
+      esValido: true,
+      error: null,
+      valores: {
+        bajoMax: Number(bMax.toFixed(1)),
+        aceptableMin: Number(aMin.toFixed(1)),
+        aceptableMax: Number(aMax.toFixed(1)),
+        competenteMin: Number(cMin.toFixed(1)),
+        competenteMax: Number(cMax.toFixed(1)),
+        excelenteMin: Number(eMin.toFixed(1)),
+        excelenteMax: 5.0,
+        umbralSobresaliente: Number(uSob.toFixed(1)),
+      },
+    };
+  }, [escalaInputs]);
+
+  const handleGuardarEscala = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validacionEscala.esValido || !validacionEscala.valores) return;
+
+    try {
+      setIsSavingEscala(true);
+      const actualConfig = (await db.configuracion.get(1)) || { id: 1, nombreDocente: "" };
+      await db.configuracion.put({
+        ...actualConfig,
+        id: 1,
+        escala: validacionEscala.valores,
+      });
+      setEscalaExito(true);
+      setTimeout(() => setEscalaExito(false), 3000);
+    } catch (err) {
+      console.error("Error al guardar escala:", err);
+      alert("No se pudo guardar la configuración de escala.");
+    } finally {
+      setIsSavingEscala(false);
+    }
+  };
+
+  const handleRestablecerEscala = () => {
+    setEscalaInputs({
+      bajoMax: ESCALA_DEFAULT.bajoMax.toString(),
+      aceptableMin: ESCALA_DEFAULT.aceptableMin.toString(),
+      aceptableMax: ESCALA_DEFAULT.aceptableMax.toString(),
+      competenteMin: ESCALA_DEFAULT.competenteMin.toString(),
+      competenteMax: ESCALA_DEFAULT.competenteMax.toString(),
+      excelenteMin: ESCALA_DEFAULT.excelenteMin.toString(),
+      umbralSobresaliente: ESCALA_DEFAULT.umbralSobresaliente.toString(),
+    });
+    setEscalaResetMsg(true);
+    setTimeout(() => setEscalaResetMsg(false), 3000);
   };
 
   // Estados locales
@@ -846,7 +1017,288 @@ export default function ConfiguracionPage() {
         </div>
       </div>
 
-      {/* 4. ZONA DE PELIGRO: RESTABLECIMIENTO DE FÁBRICA / LIMPIEZA PROFUNDA */}
+      {/* 4. PARAMETRIZACIÓN DE ESCALAS Y CRITERIOS INSTITUCIONALES */}
+      <div className="bg-white border border-zinc-200 shadow-sm dark:bg-zinc-900/50 dark:border-zinc-800 dark:shadow-none rounded-xl p-6 space-y-6">
+        <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300 rounded-lg">
+              <SlidersHorizontal className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="font-semibold text-sm text-zinc-900 dark:text-zinc-50">
+                Parámetros de Escala y Calificaciones
+              </h2>
+              <span className="text-[11px] font-medium text-indigo-700 dark:text-indigo-400">
+                Rangos para Resultados de Aprendizaje (RAP) e Informes Institucionales
+              </span>
+            </div>
+          </div>
+          <span className="font-mono text-[11px] px-2 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-medium">
+            Global
+          </span>
+        </div>
+
+        <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+          Define los rangos numéricos utilizados para clasificar el nivel de desempeño de los estudiantes en los reportes de Resultados de Aprendizaje y el umbral mínimo para el cuadro de honor en los informes oficiales de Mortalidad Académica.
+        </p>
+
+        <form onSubmit={handleGuardarEscala} className="space-y-6">
+          {/* Sección A: Cuadrícula del Semáforo de Desempeño */}
+          <div className="space-y-3">
+            <div className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 uppercase tracking-wider flex items-center justify-between">
+              <span>Niveles de Desempeño (Resultados de Aprendizaje)</span>
+              <span className="text-[11px] font-normal text-zinc-400 lowercase">escala continua 0.0 - 5.0</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+              {/* Nivel 1: BAJO (Rose) */}
+              <div className="rounded-xl p-4 border border-rose-200 bg-rose-50/40 dark:border-rose-900/40 dark:bg-rose-950/20 space-y-3 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-rose-900 dark:text-rose-300">
+                    Bajo
+                  </span>
+                  <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 dark:bg-rose-900/60 dark:text-rose-300">
+                    Reprobado
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400 font-mono">
+                    <span>Mínimo:</span>
+                    <span className="font-semibold text-zinc-700 dark:text-zinc-300">0.0 (Fijo)</span>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                      Límite Superior
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={escalaInputs.bajoMax}
+                      onChange={(e) =>
+                        setEscalaInputs((prev) => ({ ...prev, bajoMax: e.target.value }))
+                      }
+                      className="w-full px-2.5 py-1.5 text-xs font-mono text-center rounded-lg bg-white border border-rose-300 text-rose-950 focus:outline-none focus:border-rose-500 focus:ring-1 focus:ring-rose-400 dark:bg-zinc-950 dark:border-rose-800 dark:text-rose-100 dark:focus:border-rose-600 transition-colors"
+                      placeholder="2.9"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Nivel 2: ACEPTABLE (Amber) */}
+              <div className="rounded-xl p-4 border border-amber-200 bg-amber-50/40 dark:border-amber-900/40 dark:bg-amber-950/20 space-y-3 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-amber-900 dark:text-amber-300">
+                    Aceptable
+                  </span>
+                  <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-300">
+                    Aprobado
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={escalaInputs.aceptableMin}
+                      onChange={(e) =>
+                        setEscalaInputs((prev) => ({ ...prev, aceptableMin: e.target.value }))
+                      }
+                      className="w-full px-2 py-1.5 text-xs font-mono text-center rounded-lg bg-white border border-amber-300 text-amber-950 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-400 dark:bg-zinc-950 dark:border-amber-800 dark:text-amber-100 dark:focus:border-amber-600 transition-colors"
+                      placeholder="3.0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={escalaInputs.aceptableMax}
+                      onChange={(e) =>
+                        setEscalaInputs((prev) => ({ ...prev, aceptableMax: e.target.value }))
+                      }
+                      className="w-full px-2 py-1.5 text-xs font-mono text-center rounded-lg bg-white border border-amber-300 text-amber-950 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-400 dark:bg-zinc-950 dark:border-amber-800 dark:text-amber-100 dark:focus:border-amber-600 transition-colors"
+                      placeholder="3.9"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Nivel 3: COMPETENTE (Sky) */}
+              <div className="rounded-xl p-4 border border-sky-200 bg-sky-50/40 dark:border-sky-900/40 dark:bg-sky-950/20 space-y-3 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-sky-900 dark:text-sky-300">
+                    Competente
+                  </span>
+                  <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-sky-100 text-sky-800 dark:bg-sky-900/60 dark:text-sky-300">
+                    Aprobado
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                      Desde
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={escalaInputs.competenteMin}
+                      onChange={(e) =>
+                        setEscalaInputs((prev) => ({ ...prev, competenteMin: e.target.value }))
+                      }
+                      className="w-full px-2 py-1.5 text-xs font-mono text-center rounded-lg bg-white border border-sky-300 text-sky-950 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-400 dark:bg-zinc-950 dark:border-sky-800 dark:text-sky-100 dark:focus:border-sky-600 transition-colors"
+                      placeholder="4.0"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                      Hasta
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={escalaInputs.competenteMax}
+                      onChange={(e) =>
+                        setEscalaInputs((prev) => ({ ...prev, competenteMax: e.target.value }))
+                      }
+                      className="w-full px-2 py-1.5 text-xs font-mono text-center rounded-lg bg-white border border-sky-300 text-sky-950 focus:outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-400 dark:bg-zinc-950 dark:border-sky-800 dark:text-sky-100 dark:focus:border-sky-600 transition-colors"
+                      placeholder="4.5"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Nivel 4: EXCELENTE (Emerald) */}
+              <div className="rounded-xl p-4 border border-emerald-200 bg-emerald-50/40 dark:border-emerald-900/40 dark:bg-emerald-950/20 space-y-3 flex flex-col justify-between">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-xs text-emerald-900 dark:text-emerald-300">
+                    Excelente
+                  </span>
+                  <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-300">
+                    Aprobado
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <div>
+                    <label className="block text-[11px] font-medium text-zinc-600 dark:text-zinc-400 mb-1">
+                      Límite Inferior (Desde)
+                    </label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={escalaInputs.excelenteMin}
+                      onChange={(e) =>
+                        setEscalaInputs((prev) => ({ ...prev, excelenteMin: e.target.value }))
+                      }
+                      className="w-full px-2.5 py-1.5 text-xs font-mono text-center rounded-lg bg-white border border-emerald-300 text-emerald-950 focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-400 dark:bg-zinc-950 dark:border-emerald-800 dark:text-emerald-100 dark:focus:border-emerald-600 transition-colors"
+                      placeholder="4.6"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-zinc-500 dark:text-zinc-400 font-mono pt-0.5">
+                    <span>Máximo:</span>
+                    <span className="font-semibold text-zinc-700 dark:text-zinc-300">5.0 (Fijo)</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sección B: Criterio de Mortalidad Académica */}
+          <div className="p-4 rounded-xl border border-zinc-200 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/60 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <Award className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                  Umbral de Estudiantes Sobresalientes (Mortalidad Académica)
+                </h3>
+              </div>
+              <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed max-w-xl">
+                Calificación mínima requerida para figurar en la sección de estudiantes sobresalientes dentro del formato Excel oficial de Mortalidad Académica (Defecto institucional: 4.6).
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400">Nota ≥</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={escalaInputs.umbralSobresaliente}
+                onChange={(e) =>
+                  setEscalaInputs((prev) => ({ ...prev, umbralSobresaliente: e.target.value }))
+                }
+                className="w-20 px-2.5 py-1.5 text-xs font-mono font-bold text-center rounded-lg bg-white border border-zinc-300 text-zinc-900 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-400 dark:bg-zinc-900 dark:border-zinc-700 dark:text-zinc-100 dark:focus:border-indigo-500 transition-colors"
+                placeholder="4.6"
+              />
+            </div>
+          </div>
+
+          {/* Banner de Error por Solapamiento o Inconsistencia */}
+          {!validacionEscala.esValido && validacionEscala.error && (
+            <div className="flex items-center gap-2 p-3 text-xs bg-rose-50 text-rose-800 border border-rose-200 dark:bg-rose-950/30 dark:text-rose-300 dark:border-rose-900/60 rounded-lg">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+              <span>{validacionEscala.error}</span>
+            </div>
+          )}
+
+          {/* Banner de Éxito al Guardar */}
+          {escalaExito && (
+            <div className="flex items-center gap-2 p-3 text-xs bg-emerald-50 text-emerald-800 border border-emerald-200 dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-800/60 rounded-lg">
+              <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <span>Parámetros de escala actualizados correctamente. Los reportes aplicarán esta nueva configuración.</span>
+            </div>
+          )}
+
+          {/* Banner de Restablecimiento */}
+          {escalaResetMsg && (
+            <div className="flex items-center gap-2 p-3 text-xs bg-blue-50 text-blue-800 border border-blue-200 dark:bg-blue-950/30 dark:text-blue-300 dark:border-blue-800/60 rounded-lg">
+              <Info className="w-4 h-4 shrink-0 text-blue-600 dark:text-blue-400" />
+              <span>Valores institucionales cargados en el formulario. Haz clic en &quot;Guardar Escala&quot; para aplicarlos.</span>
+            </div>
+          )}
+
+          {/* Botonera de Acciones */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+            <button
+              type="button"
+              onClick={handleRestablecerEscala}
+              className="px-3.5 py-2 text-xs font-medium rounded-lg border border-zinc-200 bg-white hover:bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:text-zinc-200 transition-colors flex items-center justify-center gap-1.5 shadow-2xs"
+            >
+              <RotateCcw className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
+              <span>Restablecer Valores Institucionales</span>
+            </button>
+
+            <button
+              type="submit"
+              disabled={isSavingEscala || !validacionEscala.esValido}
+              className="px-5 py-2 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-900 text-xs font-semibold rounded-lg transition-all flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {isSavingEscala ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Guardando...</span>
+                </>
+              ) : escalaExito ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Guardado</span>
+                </>
+              ) : (
+                <span>Guardar Escala</span>
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+
+      {/* 5. ZONA DE PELIGRO: RESTABLECIMIENTO DE FÁBRICA / LIMPIEZA PROFUNDA */}
       <div className="rounded-xl border border-rose-300 bg-rose-50/40 p-6 shadow-xs dark:border-rose-900/60 dark:bg-rose-950/20 transition-all">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
