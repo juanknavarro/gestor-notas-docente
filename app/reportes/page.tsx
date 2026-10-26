@@ -17,10 +17,13 @@ import {
   Users,
   Award,
   TrendingUp,
+  TrendingDown,
   AlertCircle,
   FileSpreadsheet,
   CheckCircle2,
   XCircle,
+  FileDown,
+  Loader2,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -33,6 +36,7 @@ export default function ReportesPage() {
   const [selectedPeriodoId, setSelectedPeriodoId] = useState<number | null>(null);
   const [selectedAsignaturaId, setSelectedAsignaturaId] = useState<number | null>(null);
   const [selectedNumeroCorte, setSelectedNumeroCorte] = useState<number>(1);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
 
   // 2. Cargar periodos
   const periodos = useLiveQuery(() => db.periodos.toArray());
@@ -152,6 +156,7 @@ export default function ReportesPage() {
     const totalAprobados = aceptable.length + competente.length + excelente.length;
     const totalReprobados = bajo.length;
     const tasaAprobacion = totalEvaluados > 0 ? (totalAprobados / totalEvaluados) * 100 : 0;
+    const tasaReprobacion = totalEvaluados > 0 ? (totalReprobados / totalEvaluados) * 100 : 0;
 
     // Porcentajes para cada categoría
     const pctBajo = totalEvaluados > 0 ? (bajo.length / totalEvaluados) * 100 : 0;
@@ -163,6 +168,7 @@ export default function ReportesPage() {
       totalEvaluados,
       promedioGrupo,
       tasaAprobacion,
+      tasaReprobacion,
       totalAprobados,
       totalReprobados,
       tieneActividades: actividades.length > 0,
@@ -189,20 +195,76 @@ export default function ReportesPage() {
     };
   }, [datosReporte, escala]);
 
+  // Exportación nativa a PDF (Lazy Load para mantener bundle ligero)
+  const handleExportarPDF = async () => {
+    if (!analisis || !selectedAsignaturaId) return;
+
+    const asignaturaActual = asignaturas?.find((a) => a.id === selectedAsignaturaId);
+    if (!asignaturaActual) return;
+
+    const periodoActual = periodos?.find((p) => p.id === selectedPeriodoId);
+    const periodoNombre = periodoActual?.nombre || "Sin Periodo";
+    const docenteNombre = configDocente?.nombreDocente?.trim() || "Docente Sin Asignar";
+
+    try {
+      setIsExportingPDF(true);
+      const { generarPDFResultadosAprendizaje } = await import(
+        "@/lib/pdf/reporteResultadosAprendizaje"
+      );
+
+      await generarPDFResultadosAprendizaje({
+        asignatura: {
+          nombre: asignaturaActual.nombre,
+          programa: asignaturaActual.programa,
+          numeroClase: asignaturaActual.numeroClase,
+          numeroCatalogo: asignaturaActual.numeroCatalogo,
+        },
+        periodoNombre,
+        numeroCorte: selectedNumeroCorte,
+        pesoCorte: datosReporte?.pesoCorte ?? (selectedNumeroCorte === 3 ? 30 : 35),
+        docenteNombre,
+        escala,
+        analisis,
+      });
+    } catch (error) {
+      console.error("Error al generar el reporte en PDF:", error);
+      alert("Ocurrió un error inesperado al generar el informe en PDF.");
+    } finally {
+      setIsExportingPDF(false);
+    }
+  };
+
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-6">
-      {/* Encabezado */}
-      <div>
-        <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 font-medium text-xs tracking-wider uppercase mb-1">
-          <BarChart3 className="w-3.5 h-3.5" />
-          <span>Informes y Analítica</span>
+      {/* Encabezado Principal con Botón de Exportación Ghost */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 text-zinc-500 dark:text-zinc-400 font-medium text-xs tracking-wider uppercase mb-1">
+            <BarChart3 className="w-3.5 h-3.5" />
+            <span>Informes y Analítica</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 dark:text-zinc-50 tracking-tight">
+            Evaluación de Resultados de Aprendizaje
+          </h1>
+          <p className="text-zinc-600 dark:text-zinc-400 text-sm mt-1">
+            Distribución de rendimiento estudiantil por categorías institucionales y análisis estadístico por corte.
+          </p>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-semibold text-zinc-900 dark:text-zinc-50 tracking-tight">
-          Evaluación de Resultados de Aprendizaje
-        </h1>
-        <p className="text-zinc-600 dark:text-zinc-400 text-sm mt-1">
-          Distribución de rendimiento estudiantil por categorías institucionales y análisis estadístico por corte.
-        </p>
+
+        {/* Botón Ghost de Exportación a PDF */}
+        <button
+          type="button"
+          onClick={handleExportarPDF}
+          disabled={!analisis || !selectedAsignaturaId || isExportingPDF}
+          title="Exportar informe a PDF"
+          className="p-2.5 text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:text-zinc-100 dark:hover:bg-zinc-800/80 rounded-lg transition-colors flex items-center justify-center shrink-0 disabled:opacity-30 disabled:cursor-not-allowed self-start sm:self-center"
+        >
+          {isExportingPDF ? (
+            <Loader2 className="w-5 h-5 animate-spin text-zinc-600 dark:text-zinc-300" />
+          ) : (
+            <FileDown className="w-5 h-5" />
+          )}
+        </button>
       </div>
 
       {/* Top Bar: Filtros en Cascada */}
@@ -363,7 +425,7 @@ export default function ReportesPage() {
           )}
 
           {/* Tarjetas KPI (Key Performance Indicators) */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* KPI 1: Total Evaluados */}
             <div className="bg-white border border-zinc-200 shadow-sm dark:bg-zinc-900/50 dark:border-zinc-800 dark:shadow-none p-5 rounded-xl">
               <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 text-xs mb-2">
@@ -384,30 +446,23 @@ export default function ReportesPage() {
               </div>
             </div>
 
-            {/* KPI 2: Promedio General del Grupo */}
+            {/* KPI 2: Tasa de Reprobados */}
             <div className="bg-white border border-zinc-200 shadow-sm dark:bg-zinc-900/50 dark:border-zinc-800 dark:shadow-none p-5 rounded-xl">
               <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 text-xs mb-2">
-                <span className="font-medium">Promedio del Grupo</span>
-                <TrendingUp className="w-4 h-4" />
+                <span className="font-medium">Tasa de Reprobados</span>
+                <TrendingDown className="w-4 h-4 text-rose-500 dark:text-rose-400" />
               </div>
-              <div className="text-2xl sm:text-3xl font-bold font-mono">
-                <span
-                  className={
-                    analisis.promedioGrupo >= 3.0
-                      ? "text-emerald-600 dark:text-emerald-400"
-                      : "text-rose-600 dark:text-rose-400"
-                  }
-                >
-                  {analisis.promedioGrupo.toFixed(1)}
-                </span>
-                <span className="text-xs text-zinc-400 dark:text-zinc-500 font-normal ml-1.5">
-                  / 5.0
-                </span>
+              <div className="text-2xl sm:text-3xl font-bold text-zinc-900 dark:text-zinc-50 font-mono">
+                {analisis.tasaReprobacion.toFixed(1)}%
+              </div>
+              <div className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full mt-3 overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-300 bg-rose-500 dark:bg-rose-600"
+                  style={{ width: `${analisis.tasaReprobacion}%` }}
+                />
               </div>
               <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
-                {analisis.promedioGrupo >= 3.0
-                  ? "Rendimiento promedio sobre el umbral aprobatorio"
-                  : "Rendimiento promedio por debajo de la nota aprobatoria"}
+                {analisis.totalReprobados} de {analisis.totalEvaluados} estudiantes
               </p>
             </div>
 
@@ -432,6 +487,36 @@ export default function ReportesPage() {
                   style={{ width: `${analisis.tasaAprobacion}%` }}
                 />
               </div>
+              <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+                {analisis.totalAprobados} de {analisis.totalEvaluados} estudiantes
+              </p>
+            </div>
+
+            {/* KPI 4: Promedio General del Grupo */}
+            <div className="bg-white border border-zinc-200 shadow-sm dark:bg-zinc-900/50 dark:border-zinc-800 dark:shadow-none p-5 rounded-xl">
+              <div className="flex items-center justify-between text-zinc-500 dark:text-zinc-400 text-xs mb-2">
+                <span className="font-medium">Promedio del Grupo</span>
+                <TrendingUp className="w-4 h-4" />
+              </div>
+              <div className="text-2xl sm:text-3xl font-bold font-mono">
+                <span
+                  className={
+                    analisis.promedioGrupo >= 3.0
+                      ? "text-emerald-600 dark:text-emerald-400"
+                      : "text-rose-600 dark:text-rose-400"
+                  }
+                >
+                  {analisis.promedioGrupo.toFixed(1)}
+                </span>
+                <span className="text-xs text-zinc-400 dark:text-zinc-500 font-normal ml-1.5">
+                  / 5.0
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-zinc-600 dark:text-zinc-400">
+                {analisis.promedioGrupo >= 3.0
+                  ? "Rendimiento promedio sobre el umbral aprobatorio"
+                  : "Rendimiento promedio por debajo de la nota aprobatoria"}
+              </p>
             </div>
           </div>
 

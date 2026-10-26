@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, memo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, type Actividad } from "@/lib/db";
+import { db, type Actividad, ESCALA_DEFAULT } from "@/lib/db";
 import {
   calcularDefinitivaCorte,
   calcularDetalleDefinitivaCorte,
@@ -10,10 +10,9 @@ import {
   type DetalleDefinitivaCorte,
 } from "@/lib/calculos";
 import {
-  generarPlantillaExcelCorte,
   procesarExcelNotas,
   type ResultadoImportacionExcel,
-} from "@/lib/excel-corte";
+} from "@/lib/excel";
 import {
   prepararDatosInformeCorte,
   prepararDatosPlanMejoramiento,
@@ -136,9 +135,11 @@ export function VistaCorte({
   // Estados locales temporales para celdas de notas mientras el usuario tipea
   const [editingNotas, setEditingNotas] = useState<Record<string, string>>({});
 
-  // Estados para importación y exportación de plantillas Excel (.xlsx)
+  // Estados para importación y exportación de notas (Excel y PDF)
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isImportingExcel, setIsImportingExcel] = useState(false);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
+  const [isExportingPDF, setIsExportingPDF] = useState(false);
   const [modalImportacionAbierto, setModalImportacionAbierto] = useState(false);
   const [resultadoModal, setResultadoModal] = useState<ResultadoImportacionExcel | null>(null);
 
@@ -534,19 +535,22 @@ export function VistaCorte({
     return calcularDefinitivaCorte(estudianteId, actividades, notasMap, pesoCorte);
   };
 
-  // Descargar plantilla Excel (.xlsx) con actividades del corte actual y estudiantes
-  const handleDescargarPlantillaExcel = async () => {
+  // Exportar cuadrícula de calificaciones a Excel (.xlsx) con lazy loading
+  const handleExportarExcel = async () => {
     if (!actividades || actividades.length === 0) {
-      alert("Debes crear al menos una actividad en este corte para generar la plantilla.");
+      alert("Debes crear al menos una actividad en este corte para exportar la cuadrícula.");
       return;
     }
 
     try {
-      const { buffer, filename } = await generarPlantillaExcelCorte(
+      setIsExportingExcel(true);
+      const { exportarCuadriculaExcel } = await import("@/lib/excel");
+      const { buffer, filename } = await exportarCuadriculaExcel(
         estudiantes || [],
         actividades,
         notasMap,
-        numeroCorte
+        numeroCorte,
+        pesoCorte
       );
 
       const blob = new Blob([buffer], {
@@ -561,8 +565,56 @@ export function VistaCorte({
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
     } catch (err) {
-      console.error("Error al exportar plantilla Excel:", err);
-      alert("Ocurrió un error al generar la plantilla de Excel.");
+      console.error("Error al exportar cuadrícula Excel:", err);
+      alert("Ocurrió un error al generar el archivo Excel de la cuadrícula.");
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
+
+  // Exportar cuadrícula de calificaciones a PDF nativo (Landscape A4) con lazy loading
+  const handleExportarPDF = async () => {
+    if (!actividades || actividades.length === 0) {
+      alert("Debes crear al menos una actividad en este corte para exportar la cuadrícula.");
+      return;
+    }
+
+    try {
+      setIsExportingPDF(true);
+      const asignatura = await db.asignaturas.get(asignaturaId);
+      const periodo = asignatura?.periodoId
+        ? await db.periodos.get(asignatura.periodoId)
+        : null;
+      const configDocente = await db.configuracion.get(1);
+      const escala = configDocente?.escala ?? ESCALA_DEFAULT;
+      const docenteNombre =
+        configDocente?.nombreDocente?.trim() || "Docente Sin Asignar";
+
+      const { generarPDFCuadriculaNotas } = await import(
+        "@/lib/pdf/reporteCuadriculaNotas"
+      );
+
+      await generarPDFCuadriculaNotas({
+        asignatura: {
+          nombre: asignatura?.nombre || "Asignatura",
+          programa: asignatura?.programa,
+          numeroClase: asignatura?.numeroClase,
+          numeroCatalogo: asignatura?.numeroCatalogo,
+        },
+        periodoNombre: periodo?.nombre || "Sin Periodo",
+        numeroCorte,
+        pesoCorte,
+        docenteNombre,
+        escala,
+        actividades,
+        estudiantes: estudiantes || [],
+        notasMap,
+      });
+    } catch (err) {
+      console.error("Error al generar PDF de la cuadrícula:", err);
+      alert("Ocurrió un error al exportar la cuadrícula de notas a PDF.");
+    } finally {
+      setIsExportingPDF(false);
     }
   };
 
@@ -1034,16 +1086,34 @@ export function VistaCorte({
               )}
             </button>
 
-            {/* Botón Descargar Plantilla Excel */}
+            {/* Botón Exportar Cuadrícula Excel (Verde Esmeralda) */}
             <button
               type="button"
-              onClick={handleDescargarPlantillaExcel}
-              disabled={!actividades || actividades.length === 0}
-              className="px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:border-zinc-700/60 dark:text-zinc-200 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs disabled:opacity-40"
-              title="Descargar plantilla Excel (.xlsx) con encabezados de actividades de este corte"
+              onClick={handleExportarExcel}
+              disabled={isExportingExcel || !actividades || actividades.length === 0}
+              title="Exportar cuadrícula de calificaciones a Excel (.xlsx)"
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/60 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 hover:border-emerald-300 transition-colors shadow-2xs shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              <Download className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
-              <span>Descargar Plantilla Excel</span>
+              {isExportingExcel ? (
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-600 dark:text-emerald-400" />
+              ) : (
+                <FileSpreadsheet className="w-4 h-4" />
+              )}
+            </button>
+
+            {/* Botón Exportar Cuadrícula PDF (Rojo / Rose) */}
+            <button
+              type="button"
+              onClick={handleExportarPDF}
+              disabled={isExportingPDF || !actividades || actividades.length === 0}
+              title="Exportar cuadrícula de calificaciones a PDF (Horizontal A4)"
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-rose-200 dark:border-rose-800/40 bg-rose-50/60 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 hover:border-rose-300 transition-colors shadow-2xs shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {isExportingPDF ? (
+                <Loader2 className="w-4 h-4 animate-spin text-rose-600 dark:text-rose-400" />
+              ) : (
+                <FileText className="w-4 h-4" />
+              )}
             </button>
 
             {/* Botón Importar Notas Excel */}
