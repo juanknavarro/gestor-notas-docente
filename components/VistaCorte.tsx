@@ -41,6 +41,7 @@ import {
   Loader2,
   Lock,
   Unlock,
+  Search,
 } from "lucide-react";
 
 interface BadgeDefinitivaAnimadaProps {
@@ -136,6 +137,7 @@ export function VistaCorte({
   const [editingNotas, setEditingNotas] = useState<Record<string, string>>({});
 
   // Estados para importación y exportación de notas (Excel y PDF)
+  const [searchTerm, setSearchTerm] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isImportingExcel, setIsImportingExcel] = useState(false);
   const [isExportingExcel, setIsExportingExcel] = useState(false);
@@ -221,6 +223,33 @@ export function VistaCorte({
     () => db.estudiantes.where("asignaturaId").equals(asignaturaId).toArray(),
     [asignaturaId]
   );
+
+  // Filtrado reactivo e inteligente de estudiantes (por nombre, apellido o identificación)
+  const estudiantesFiltrados = useMemo(() => {
+    if (!estudiantes) return [];
+    const term = searchTerm
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    if (!term) return estudiantes;
+
+    return estudiantes.filter((est) => {
+      const nombreNorm = est.nombreCompleto
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "");
+      const idClean = est.identificacion.replace(/[-.\s]/g, "").toLowerCase();
+      const idOriginal = est.identificacion.toLowerCase();
+
+      return (
+        nombreNorm.includes(term) ||
+        idClean.includes(term) ||
+        idOriginal.includes(term)
+      );
+    });
+  }, [estudiantes, searchTerm]);
 
   // 3. Notas asociadas a las actividades de este corte
   const notas = useLiveQuery(async () => {
@@ -500,13 +529,13 @@ export function VistaCorte({
     }
   };
 
-  // Navegación vertical con tecla ENTER (Mejora 2)
+  // Navegación vertical con tecla ENTER y flechas (arriba / abajo)
   const handleNotaKeyDown = (
     e: React.KeyboardEvent<HTMLInputElement>,
     studentIndex: number,
     actividadId: number
   ) => {
-    if (e.key === "Enter") {
+    if (e.key === "Enter" || e.key === "ArrowDown") {
       e.preventDefault();
       const nextIndex = studentIndex + 1;
       const nextInputId = `nota-cell-${nextIndex}-${actividadId}`;
@@ -515,6 +544,18 @@ export function VistaCorte({
       if (nextInput) {
         nextInput.focus();
         nextInput.select?.();
+      }
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const prevIndex = studentIndex - 1;
+      if (prevIndex >= 0) {
+        const prevInputId = `nota-cell-${prevIndex}-${actividadId}`;
+        const prevInput = document.getElementById(prevInputId) as HTMLInputElement | null;
+
+        if (prevInput) {
+          prevInput.focus();
+          prevInput.select?.();
+        }
       }
     }
   };
@@ -1046,190 +1087,224 @@ export function VistaCorte({
 
       {/* 2. Cuadrícula de Notas con Columnas Sticky (Mejoras 2, 3 y 4) */}
       <div className="bg-white border border-zinc-200 shadow-sm dark:bg-zinc-900/50 dark:border-zinc-800 dark:shadow-none rounded-xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <FileSpreadsheet className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-            <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">
-              Cuadrícula de Calificaciones — Corte {numeroCorte}
-            </h3>
-            <span className="text-xs text-zinc-500 dark:text-zinc-400 font-mono bg-zinc-100 border border-zinc-200 dark:bg-zinc-800/60 dark:border-zinc-700/50 px-2 py-0.5 rounded">
-              {estudiantes ? estudiantes.length : 0} estudiante(s)
-            </span>
-          </div>
+        <div className="px-6 py-4 border-b border-zinc-200 dark:border-zinc-800">
+          {/* CONTENEDOR PRINCIPAL DEL HEADER */}
+          <div className="w-full flex flex-col gap-2.5">
+            {/* FILA 1: Título (Izquierda) y Botones (Derecha) */}
+            <div className="w-full flex flex-row justify-between items-center gap-4">
+              {/* 1A. Izquierda: Contexto */}
+              <div className="flex items-center gap-3">
+                <h3 className="text-sm font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-2">
+                  <FileSpreadsheet className="w-4 h-4 text-zinc-400" />
+                  Cuadrícula de Calificaciones — Corte {numeroCorte}
+                </h3>
+                <div className="bg-zinc-100 dark:bg-zinc-800/50 text-zinc-500 dark:text-zinc-400 text-[11px] font-medium px-2 py-0.5 rounded-full border border-zinc-200 dark:border-zinc-700/50">
+                  {searchTerm ? `${estudiantesFiltrados.length} de ${estudiantes?.length || 0}` : (estudiantes?.length || 0)} estudiante(s)
+                </div>
+              </div>
 
-          <div className="flex items-center gap-2.5 flex-wrap">
-            {/* Input oculto para carga de archivo Excel (.xlsx) */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-              onChange={handleSeleccionarExcel}
-              className="hidden"
-            />
+              {/* 1B. Derecha: Botones de Acción */}
+              <div className="flex items-center gap-2">
+                {/* Input oculto para carga de archivo Excel (.xlsx) */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={handleSeleccionarExcel}
+                  className="hidden"
+                />
 
-            {/* Botón Candado (Bloquear/Desbloquear Corte) - Iconográfico Minimalista */}
-            <button
-              type="button"
-              onClick={handleToggleBloqueo}
-              disabled={isTogglingBloqueo}
-              title="Bloquear/Desbloquear corte"
-              className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors border shadow-2xs shrink-0 ${
-                isBloqueado
-                  ? "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/40 dark:hover:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60"
-                  : "bg-white hover:bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:text-zinc-200 dark:border-zinc-700/60"
-              }`}
-            >
-              {isBloqueado ? (
-                <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-              ) : (
-                <Unlock className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-              )}
-            </button>
+                {/* Botón Candado (Bloquear/Desbloquear Corte) - Iconográfico Minimalista */}
+                <button
+                  type="button"
+                  onClick={handleToggleBloqueo}
+                  disabled={isTogglingBloqueo}
+                  title="Bloquear/Desbloquear corte"
+                  className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors border shadow-2xs shrink-0 ${
+                    isBloqueado
+                      ? "bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 dark:bg-amber-950/40 dark:hover:bg-amber-950/60 dark:text-amber-300 dark:border-amber-700/60"
+                      : "bg-white hover:bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:text-zinc-200 dark:border-zinc-700/60"
+                  }`}
+                >
+                  {isBloqueado ? (
+                    <Lock className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  ) : (
+                    <Unlock className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
+                  )}
+                </button>
 
-            {/* Botón Exportar Cuadrícula Excel (Verde Esmeralda) */}
-            <button
-              type="button"
-              onClick={handleExportarExcel}
-              disabled={isExportingExcel || !actividades || actividades.length === 0}
-              title="Exportar cuadrícula de calificaciones a Excel (.xlsx)"
-              className="w-8 h-8 flex items-center justify-center rounded-lg border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/60 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 hover:border-emerald-300 transition-colors shadow-2xs shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {isExportingExcel ? (
-                <Loader2 className="w-4 h-4 animate-spin text-emerald-600 dark:text-emerald-400" />
-              ) : (
-                <FileSpreadsheet className="w-4 h-4" />
-              )}
-            </button>
+                {/* Botón Exportar Cuadrícula Excel (Verde Esmeralda) */}
+                <button
+                  type="button"
+                  onClick={handleExportarExcel}
+                  disabled={isExportingExcel || !actividades || actividades.length === 0}
+                  title="Exportar cuadrícula de calificaciones a Excel (.xlsx)"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-emerald-200 dark:border-emerald-800/40 bg-emerald-50/60 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 hover:border-emerald-300 transition-colors shadow-2xs shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isExportingExcel ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-emerald-600 dark:text-emerald-400" />
+                  ) : (
+                    <FileSpreadsheet className="w-4 h-4" />
+                  )}
+                </button>
 
-            {/* Botón Exportar Cuadrícula PDF (Rojo / Rose) */}
-            <button
-              type="button"
-              onClick={handleExportarPDF}
-              disabled={isExportingPDF || !actividades || actividades.length === 0}
-              title="Exportar cuadrícula de calificaciones a PDF (Horizontal A4)"
-              className="w-8 h-8 flex items-center justify-center rounded-lg border border-rose-200 dark:border-rose-800/40 bg-rose-50/60 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 hover:border-rose-300 transition-colors shadow-2xs shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {isExportingPDF ? (
-                <Loader2 className="w-4 h-4 animate-spin text-rose-600 dark:text-rose-400" />
-              ) : (
-                <FileText className="w-4 h-4" />
-              )}
-            </button>
+                {/* Botón Exportar Cuadrícula PDF (Rojo / Rose) */}
+                <button
+                  type="button"
+                  onClick={handleExportarPDF}
+                  disabled={isExportingPDF || !actividades || actividades.length === 0}
+                  title="Exportar cuadrícula de calificaciones a PDF (Horizontal A4)"
+                  className="w-8 h-8 flex items-center justify-center rounded-lg border border-rose-200 dark:border-rose-800/40 bg-rose-50/60 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 hover:bg-rose-100 dark:hover:bg-rose-900/40 hover:border-rose-300 transition-colors shadow-2xs shrink-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isExportingPDF ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-rose-600 dark:text-rose-400" />
+                  ) : (
+                    <FileText className="w-4 h-4" />
+                  )}
+                </button>
 
-            {/* Botón Importar Notas Excel */}
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={isImportingExcel || isBloqueado || !actividades || actividades.length === 0}
-              className="px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:border-zinc-700/60 dark:text-zinc-200 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs disabled:opacity-40"
-              title={
-                isBloqueado
-                  ? "Desbloquea el corte para poder importar calificaciones"
-                  : "Importar calificaciones masivamente desde un archivo Excel (.xlsx)"
-              }
-            >
-              <FileUp className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
-              <span>{isImportingExcel ? "Importando..." : "Importar Notas Excel"}</span>
-            </button>
+                {/* Botón Importar Notas Excel */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isImportingExcel || isBloqueado || !actividades || actividades.length === 0}
+                  className="px-3 py-1.5 bg-white hover:bg-zinc-50 border border-zinc-200 text-zinc-800 dark:bg-zinc-800 dark:hover:bg-zinc-700/80 dark:border-zinc-700/60 dark:text-zinc-200 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs disabled:opacity-40"
+                  title={
+                    isBloqueado
+                      ? "Desbloquea el corte para poder importar calificaciones"
+                      : "Importar calificaciones masivamente desde un archivo Excel (.xlsx)"
+                  }
+                >
+                  <FileUp className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
+                  <span>{isImportingExcel ? "Importando..." : "Importar Notas Excel"}</span>
+                </button>
 
-            {/* Menú Desplegable: Generar Informes Institucionales */}
-            <div className="relative" ref={dropdownInformesRef}>
-              <button
-                type="button"
-                onClick={() => setDropdownInformesAbierto((prev) => !prev)}
-                disabled={isGenerandoMortalidad || !estudiantes || estudiantes.length === 0}
-                className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-900 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-xs disabled:opacity-40"
-                title="Generar informes institucionales oficiales en Excel"
-              >
-                {isGenerandoMortalidad ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <FileText className="w-3.5 h-3.5" />
-                )}
-                <span>
-                  {isGenerandoMortalidad
-                    ? "Generando..."
-                    : "Generar Informes Institucionales"}
-                </span>
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${dropdownInformesAbierto ? "rotate-180" : ""}`} />
-              </button>
-
-              {dropdownInformesAbierto && (
-                <div className="absolute right-0 mt-1.5 w-64 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl z-50 py-1 overflow-hidden animate-in fade-in slide-in-from-top-1">
-                  <div className="px-3 py-1.5 border-b border-zinc-100 dark:border-zinc-800 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
-                    Informes Oficiales de Corte
-                  </div>
-
+                {/* Menú Desplegable: Generar Informes Institucionales */}
+                <div className="relative" ref={dropdownInformesRef}>
                   <button
                     type="button"
-                    onClick={handleDescargarMortalidad}
-                    className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-start gap-2.5"
+                    onClick={() => setDropdownInformesAbierto((prev) => !prev)}
+                    disabled={isGenerandoMortalidad || !estudiantes || estudiantes.length === 0}
+                    className="px-3 py-1.5 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-white dark:text-zinc-900 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-xs disabled:opacity-40"
+                    title="Generar informes institucionales oficiales en Excel"
                   >
-                    <BarChart3 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
-                    <div>
-                      <p className="font-medium text-zinc-900 dark:text-zinc-100 leading-tight">
-                        Mortalidad Académica Parcial
-                      </p>
-                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-                        Formato oficial con cálculo de reprobados, aprobados y promedio.
-                      </p>
-                    </div>
+                    {isGenerandoMortalidad ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5" />
+                    )}
+                    <span>
+                      {isGenerandoMortalidad
+                        ? "Generando..."
+                        : "Generar Informes Institucionales"}
+                    </span>
+                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 ${dropdownInformesAbierto ? "rotate-180" : ""}`} />
                   </button>
 
-                  {numeroCorte === 3 ? (
-                    <div
-                      title="El plan de mejoramiento solo aplica para los cortes 1 y 2"
-                      className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-400 dark:text-zinc-500 opacity-60 cursor-not-allowed flex items-start gap-2.5 bg-zinc-50/50 dark:bg-zinc-900/50 select-none"
-                    >
-                      <FileCheck2 className="w-4 h-4 text-zinc-400 dark:text-zinc-500 mt-0.5 shrink-0" />
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
-                          <p className="font-medium text-zinc-500 dark:text-zinc-400 leading-tight">
-                            Plan de Mejoramiento
-                          </p>
-                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 border border-zinc-200 dark:border-zinc-700">
-                            Cortes 1 y 2
-                          </span>
-                        </div>
-                        <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">
-                          El plan de mejoramiento solo aplica para los cortes 1 y 2
-                        </p>
+                  {dropdownInformesAbierto && (
+                    <div className="absolute right-0 mt-1.5 w-64 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-xl z-50 py-1 overflow-hidden animate-in fade-in slide-in-from-top-1">
+                      <div className="px-3 py-1.5 border-b border-zinc-100 dark:border-zinc-800 text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">
+                        Informes Oficiales de Corte
                       </div>
-                    </div>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleDescargarPlanMejoramiento}
-                      disabled={isGenerandoMejoramiento}
-                      className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-start gap-2.5 group disabled:opacity-50"
-                    >
-                      {isGenerandoMejoramiento ? (
-                        <Loader2 className="w-4 h-4 text-indigo-500 animate-spin mt-0.5 shrink-0" />
-                      ) : (
-                        <FileCheck2 className="w-4 h-4 text-indigo-500 mt-0.5 shrink-0" />
-                      )}
-                      <div className="flex-1">
-                        <div className="flex items-center justify-between">
+
+                      <button
+                        type="button"
+                        onClick={handleDescargarMortalidad}
+                        className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-start gap-2.5"
+                      >
+                        <BarChart3 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+                        <div>
                           <p className="font-medium text-zinc-900 dark:text-zinc-100 leading-tight">
-                            Plan de Mejoramiento
+                            Mortalidad Académica Parcial
                           </p>
-                          <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
-                            Global
-                          </span>
+                          <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                            Formato oficial con cálculo de reprobados, aprobados y promedio.
+                          </p>
                         </div>
-                        <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
-                          Consolidado de todas las asignaturas de este corte y periodo.
-                        </p>
-                      </div>
-                    </button>
+                      </button>
+
+                      {numeroCorte === 3 ? (
+                        <div
+                          title="El plan de mejoramiento solo aplica para los cortes 1 y 2"
+                          className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-400 dark:text-zinc-500 opacity-60 cursor-not-allowed flex items-start gap-2.5 bg-zinc-50/50 dark:bg-zinc-900/50 select-none"
+                        >
+                          <FileCheck2 className="w-4 h-4 text-zinc-400 dark:text-zinc-500 mt-0.5 shrink-0" />
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <p className="font-medium text-zinc-500 dark:text-zinc-400 leading-tight">
+                                Plan de Mejoramiento
+                              </p>
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 border border-zinc-200 dark:border-zinc-700">
+                                Cortes 1 y 2
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-0.5">
+                              El plan de mejoramiento solo aplica para los cortes 1 y 2
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleDescargarPlanMejoramiento}
+                          disabled={isGenerandoMejoramiento}
+                          className="w-full text-left px-3.5 py-2.5 text-xs text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-start gap-2.5 group disabled:opacity-50"
+                        >
+                          {isGenerandoMejoramiento ? (
+                            <Loader2 className="w-4 h-4 text-indigo-500 animate-spin mt-0.5 shrink-0" />
+                          ) : (
+                            <FileCheck2 className="w-4 h-4 text-indigo-500 mt-0.5 shrink-0" />
+                          )}
+                          <div className="flex-1">
+                            <div className="flex items-center justify-between">
+                              <p className="font-medium text-zinc-900 dark:text-zinc-100 leading-tight">
+                                Plan de Mejoramiento
+                              </p>
+                              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                                Global
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-0.5">
+                              Consolidado de todas las asignaturas de este corte y periodo.
+                            </p>
+                          </div>
+                        </button>
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
+              </div>
             </div>
 
-            <div className="hidden xl:flex items-center gap-1 text-[11px] text-zinc-400 border-l border-zinc-200 dark:border-zinc-800 pl-3 font-mono">
-              <Calculator className="w-3 h-3" />
-              <span>Auto-guardado activo</span>
+            {/* FILA 2: Buscador (Izquierda) y Auto-guardado (Derecha) */}
+            <div className="w-full flex items-center justify-between">
+              <div className="relative flex items-center">
+                <Search className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 absolute left-2.5 pointer-events-none" />
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Escape") setSearchTerm("");
+                  }}
+                  placeholder="Buscar por nombre o ID..."
+                  className="h-7 pl-8 pr-7 text-xs bg-zinc-50/80 dark:bg-zinc-800/40 border border-zinc-200 dark:border-zinc-700/60 rounded-lg w-56 transition-all focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-2 text-zinc-400 hover:text-zinc-600 p-0.5 transition-colors cursor-pointer"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 dark:text-zinc-500 font-mono select-none">
+                <Calculator className="w-3 h-3" />
+                <span>Auto-guardado activo</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1334,7 +1409,34 @@ export function VistaCorte({
               </thead>
 
               <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800/60">
-                {estudiantes.map((estudiante, studentIndex) => {
+                {estudiantesFiltrados.length === 0 ? (
+                  <tr>
+                    <td
+                      colSpan={4 + actividades.length}
+                      className="px-6 py-12 text-center bg-white dark:bg-zinc-900/40"
+                    >
+                      <div className="flex flex-col items-center justify-center max-w-sm mx-auto">
+                        <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-400 mb-3">
+                          <Search className="w-5 h-5" />
+                        </div>
+                        <p className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                          No se encontraron estudiantes
+                        </p>
+                        <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                          No hay coincidencias para &quot;{searchTerm}&quot; en nombres o identificación.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setSearchTerm("")}
+                          className="mt-3 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                        >
+                          Limpiar búsqueda y ver todos
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ) : (
+                  estudiantesFiltrados.map((estudiante, studentIndex) => {
                   const detalleDef = getDetalleDefinitivaEstudiante(estudiante.id!);
                   const definitiva = detalleDef?.definitiva ?? null;
 
@@ -1440,7 +1542,8 @@ export function VistaCorte({
                       </td>
                     </tr>
                   );
-                })}
+                })
+              )}
               </tbody>
             </table>
           </div>
