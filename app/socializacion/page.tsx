@@ -589,13 +589,13 @@ export default function SocializacionPage() {
               {/* Buscador y Botón de Ocultar Lista */}
               <div className="p-3 border-b border-zinc-200 dark:border-zinc-800 flex items-center gap-2">
                 <div className="relative flex-1">
-                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+                  <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500 pointer-events-none" />
                   <input
                     type="text"
                     placeholder="Buscar estudiante o ID..."
                     value={busqueda}
                     onChange={(e) => setBusqueda(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-zinc-50 border border-zinc-300 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:border-zinc-500 focus:bg-white dark:bg-zinc-950 dark:border-zinc-800 dark:text-zinc-100 dark:placeholder-zinc-500 dark:focus:border-zinc-600 transition-colors"
+                    className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-zinc-50 focus:bg-white border border-zinc-200 focus:border-zinc-400 text-zinc-900 placeholder:text-zinc-400 dark:bg-zinc-800/50 dark:focus:bg-zinc-900 dark:border-zinc-700/60 dark:focus:border-zinc-500 dark:text-zinc-100 dark:placeholder:text-zinc-500 focus:outline-none transition-colors"
                   />
                 </div>
                 <button
