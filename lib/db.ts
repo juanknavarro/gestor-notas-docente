@@ -14,11 +14,16 @@ export interface Asignatura {
   numeroCatalogo?: string; // ej. "396CBASM"
 }
 
+export type EstadoEstudiante = "activo" | "retirado" | "desertor";
+
 export interface Estudiante {
   id?: number;
   asignaturaId: number;
   identificacion: string;
   nombreCompleto: string;
+  estado?: EstadoEstudiante; // "activo" | "retirado" | "desertor" (por defecto "activo")
+  observaciones?: string; // Texto libre justificativo
+  fechaEstado?: string; // ISO string de actualización
   estadoMatricula?: "oficial" | "asistente";
   fechaCambioEstado?: string;
 }
@@ -171,6 +176,33 @@ export class GestorAcademicoDB extends Dexie {
       resultados_aprendizaje: "++id, asignaturaId, codigo",
       configuracion: "id",
     });
+
+    this.version(7)
+      .stores({
+        periodos: "++id, nombre",
+        asignaturas: "++id, periodoId, nombre, programa",
+        estudiantes: "++id, asignaturaId, identificacion, nombreCompleto, estado",
+        cortes: "++id, asignaturaId, numeroCorte, porcentaje",
+        actividades: "++id, corteId, nombre, porcentaje",
+        notas: "++id, estudianteId, actividadId, valor",
+        socializaciones: "++id, estudianteId, corteId, [estudianteId+corteId], estado",
+        programas: "++id, &nombre",
+        resultados_aprendizaje: "++id, asignaturaId, codigo",
+        configuracion: "id",
+      })
+      .upgrade(async (tx) => {
+        await tx
+          .table("estudiantes")
+          .toCollection()
+          .modify((est: Estudiante) => {
+            if (!est.estado) {
+              est.estado = "activo";
+            }
+            if (est.observaciones === undefined) {
+              est.observaciones = "";
+            }
+          });
+      });
   }
 }
 

@@ -24,12 +24,12 @@ export interface DatosPDFCuadriculaNotas {
  * Genera y descarga de forma 100% nativa (client-side) la Cuadrícula de Calificaciones
  * de un corte específico en formato PDF Horizontal (Landscape A4) con textos seleccionables y alta fidelidad vectorial.
  *
- * Cumple con:
+ * Características implementadas:
  * - Orientación Landscape (A4).
- * - Tabla horizontal dinámica con encabezados de actividades y porcentajes.
- * - Celdas de la columna "Definitiva" coloreadas (rojo si reprobó, verde si aprobó) según la escala.
- * - Fila de pie con el Promedio del Grupo por actividad y promedio general del corte.
- * - Caracteres ASCII estándar para evitar corrupción en fuentes jsPDF.
+ * - Distinción de estado de estudiante (Activo, Retirado, Desertor) en celda de nombre.
+ * - Reemplazo de definitiva por "RET" para estudiantes retirados.
+ * - Exclusión de estudiantes retirados del cálculo de promedios generales y tasas de aprobación/reprobación.
+ * - Tabla complementaria de Novedades y Observaciones del corte al final del documento.
  */
 export async function generarPDFCuadriculaNotas(
   datos: DatosPDFCuadriculaNotas
@@ -60,6 +60,26 @@ export async function generarPDFCuadriculaNotas(
   doc.setTextColor(15, 23, 42); // Slate-900
   doc.text(
     `Cuadricula de Notas - Corte ${datos.numeroCorte} (${datos.pesoCorte}%)`,
+    marginLeft,
+    currentY
+  );
+
+  currentY += 4;
+
+  // Conteo de estudiantes por estado
+  const totalEstudiantes = datos.estudiantes.length;
+  const totalRetirados = datos.estudiantes.filter((e) => e.estado === "retirado").length;
+  const totalDesertores = datos.estudiantes.filter((e) => e.estado === "desertor").length;
+  const totalActivos = totalEstudiantes - totalRetirados;
+
+  // Subtítulo con desglose de matrícula
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(71, 85, 105); // Slate-600
+  doc.text(
+    `Total Estudiantes: ${totalEstudiantes} (${totalActivos} Activos | ${totalRetirados} Retirados${
+      totalDesertores > 0 ? ` | ${totalDesertores} Desertores` : ""
+    })`,
     marginLeft,
     currentY
   );
@@ -117,36 +137,45 @@ export async function generarPDFCuadriculaNotas(
   currentY = (doc as any).lastAutoTable.finalY + 3;
 
   // 3. CÁLCULO DE RESUMEN EJECUTIVO (KPIs DEL CORTE)
-  const estudiantesConDefinitiva = datos.estudiantes.map((est) => {
-    const def = calcularDefinitivaCorte(
-      est.id!,
-      datos.actividades,
-      datos.notasMap,
-      datos.pesoCorte
-    );
-    return { estudiante: est, definitiva: def };
-  });
+  // Excluir estudiantes con estado === "retirado" del cálculo oficial de promedios y porcentajes
+  const estudiantesNoRetirados = datos.estudiantes.filter((e) => e.estado !== "retirado");
 
-  const evaluados = estudiantesConDefinitiva.filter((e) => e.definitiva !== null);
-  const totalEvaluados = evaluados.length;
-  const aprobados = evaluados.filter((e) => (e.definitiva as number) >= 3.0);
-  const reprobados = evaluados.filter((e) => (e.definitiva as number) < 3.0);
-  const totalAprobados = aprobados.length;
-  const totalReprobados = reprobados.length;
-  const tasaAprobacion = totalEvaluados > 0 ? (totalAprobados / totalEvaluados) * 100 : 0;
-  const tasaReprobacion = totalEvaluados > 0 ? (totalReprobados / totalEvaluados) * 100 : 0;
-  const promedioGeneral =
-    totalEvaluados > 0
-      ? evaluados.reduce((acc, curr) => acc + (curr.definitiva as number), 0) / totalEvaluados
+  const evaluadosNoRetirados = estudiantesNoRetirados
+    .map((est) => {
+      const def = calcularDefinitivaCorte(
+        est.id!,
+        datos.actividades,
+        datos.notasMap,
+        datos.pesoCorte
+      );
+      return { estudiante: est, definitiva: def };
+    })
+    .filter((e) => e.definitiva !== null);
+
+  const totalEvaluadosValidos = evaluadosNoRetirados.length;
+  const aprobadosValidos = evaluadosNoRetirados.filter((e) => (e.definitiva as number) >= 3.0);
+  const reprobadosValidos = evaluadosNoRetirados.filter((e) => (e.definitiva as number) < 3.0);
+  const totalAprobadosValidos = aprobadosValidos.length;
+  const totalReprobadosValidos = reprobadosValidos.length;
+
+  const tasaAprobacion =
+    totalEvaluadosValidos > 0 ? (totalAprobadosValidos / totalEvaluadosValidos) * 100 : 0;
+  const tasaReprobacion =
+    totalEvaluadosValidos > 0 ? (totalReprobadosValidos / totalEvaluadosValidos) * 100 : 0;
+
+  const promedioGeneralValido =
+    totalEvaluadosValidos > 0
+      ? evaluadosNoRetirados.reduce((acc, curr) => acc + (curr.definitiva as number), 0) /
+        totalEvaluadosValidos
       : 0;
 
   // Cintillo de KPIs en formato tarjeta compacta
   const kpiRow = [
     [
-      `Total Estudiantes: ${datos.estudiantes.length} | Evaluados: ${totalEvaluados}`,
-      `Aprobados: ${totalAprobados} (${tasaAprobacion.toFixed(1)}%)`,
-      `Reprobados: ${totalReprobados} (${tasaReprobacion.toFixed(1)}%)`,
-      `Promedio Corte: ${promedioGeneral.toFixed(1)} / 5.0`,
+      `Total Grupo: ${totalEstudiantes} | Evaluables: ${totalEvaluadosValidos}`,
+      `Aprobados: ${totalAprobadosValidos} (${tasaAprobacion.toFixed(1)}%)`,
+      `Reprobados: ${totalReprobadosValidos} (${tasaReprobacion.toFixed(1)}%)`,
+      `Promedio Corte: ${promedioGeneralValido.toFixed(1)} / 5.0`,
       `Criterio Aprobatorio: >= 3.0`,
     ],
   ];
@@ -187,46 +216,61 @@ export async function generarPDFCuadriculaNotas(
   ];
 
   const body = datos.estudiantes.map((est, index) => {
+    // Formateo del nombre según estado de trazabilidad
+    let nombreFormateado = est.nombreCompleto;
+    if (est.estado === "retirado") {
+      nombreFormateado = `${est.nombreCompleto}\n[RETIRADO]`;
+    } else if (est.estado === "desertor") {
+      nombreFormateado = `${est.nombreCompleto}\n[DESERTOR]`;
+    }
+
     const fila: string[] = [
       String(index + 1),
       est.identificacion,
-      est.nombreCompleto,
+      nombreFormateado,
     ];
 
+    // Notas de actividades
     for (const act of datos.actividades) {
       const nota = datos.notasMap.get(`${est.id}_${act.id}`);
       fila.push(nota !== undefined && nota !== null ? nota.toFixed(1) : "-");
     }
 
-    const def = calcularDefinitivaCorte(
-      est.id!,
-      datos.actividades,
-      datos.notasMap,
-      datos.pesoCorte
-    );
-    fila.push(def !== null ? def.toFixed(1) : "-");
+    // Nota definitiva (o "RET" si está retirado)
+    if (est.estado === "retirado") {
+      fila.push("RET");
+    } else {
+      const def = calcularDefinitivaCorte(
+        est.id!,
+        datos.actividades,
+        datos.notasMap,
+        datos.pesoCorte
+      );
+      fila.push(def !== null ? def.toFixed(1) : "-");
+    }
 
     return fila;
   });
 
-  // Fila de Promedios al pie de la tabla (foot)
+  // Fila de Promedios al pie de la tabla (foot) calculada sobre estudiantes NO retirados
   const footRow: string[] = ["", "", "Promedio del Grupo"];
 
   for (const act of datos.actividades) {
-    const notasAct = datos.estudiantes
+    const notasActNoRetirados = estudiantesNoRetirados
       .map((e) => datos.notasMap.get(`${e.id}_${act.id}`))
       .filter((n): n is number => n !== undefined && n !== null);
 
-    if (notasAct.length > 0) {
-      const promAct = notasAct.reduce((acc, val) => acc + val, 0) / notasAct.length;
+    if (notasActNoRetirados.length > 0) {
+      const promAct =
+        notasActNoRetirados.reduce((acc, val) => acc + val, 0) / notasActNoRetirados.length;
       footRow.push(promAct.toFixed(1));
     } else {
       footRow.push("-");
     }
   }
 
-  if (evaluados.length > 0) {
-    footRow.push(promedioGeneral.toFixed(1));
+  if (totalEvaluadosValidos > 0) {
+    footRow.push(promedioGeneralValido.toFixed(1));
   } else {
     footRow.push("-");
   }
@@ -234,7 +278,10 @@ export async function generarPDFCuadriculaNotas(
   const foot = [footRow];
 
   // Configuración de anchos de columna y alineaciones
-  const columnStylesConfig: Record<number, { cellWidth?: number | "auto"; halign?: "left" | "center" | "right"; fontStyle?: "normal" | "bold" }> = {
+  const columnStylesConfig: Record<
+    number,
+    { cellWidth?: number | "auto"; halign?: "left" | "center" | "right"; fontStyle?: "normal" | "bold" }
+  > = {
     0: { cellWidth: 8, halign: "center" },
     1: { cellWidth: 26, halign: "center" },
     2: { cellWidth: 52, halign: "left" },
@@ -281,6 +328,7 @@ export async function generarPDFCuadriculaNotas(
     columnStyles: columnStylesConfig,
     didParseCell: (data) => {
       const colIdx = data.column.index;
+      const cellText = String(data.cell.raw ?? "");
 
       // 1. Estilo especial para columnas de bonificación en la cabecera
       if (data.section === "head") {
@@ -292,19 +340,36 @@ export async function generarPDFCuadriculaNotas(
         }
       }
 
-      // 2. Coloreado condicional de la Definitiva en el cuerpo de la tabla
+      // 2. Formato condicional en el cuerpo de la tabla
       if (data.section === "body") {
+        // Columna Estudiante (Col 2): Identificar [RETIRADO] o [DESERTOR]
+        if (colIdx === 2) {
+          if (cellText.includes("[RETIRADO]")) {
+            data.cell.styles.textColor = [234, 88, 12]; // Naranja oscuro (orange-600)
+            data.cell.styles.fontStyle = "bold";
+          } else if (cellText.includes("[DESERTOR]")) {
+            data.cell.styles.textColor = [147, 51, 234]; // Púrpura (purple-600)
+            data.cell.styles.fontStyle = "bold";
+          }
+        }
+
+        // Columna Definitiva: "RET" o valor numérico
         if (colIdx === defColIndex) {
-          const rawVal = parseFloat(String(data.cell.raw));
-          if (!isNaN(rawVal)) {
-            if (rawVal <= datos.escala.bajoMax) {
-              // Reprobado: Rojo (Rose-600)
-              data.cell.styles.textColor = [225, 29, 72];
-              data.cell.styles.fontStyle = "bold";
-            } else {
-              // Aprobado: Verde (Emerald-600)
-              data.cell.styles.textColor = [16, 149, 93];
-              data.cell.styles.fontStyle = "bold";
+          if (cellText === "RET") {
+            data.cell.styles.textColor = [234, 88, 12]; // Naranja oscuro (orange-600)
+            data.cell.styles.fontStyle = "bold";
+          } else {
+            const rawVal = parseFloat(cellText);
+            if (!isNaN(rawVal)) {
+              if (rawVal <= datos.escala.bajoMax) {
+                // Reprobado: Rojo (Rose-600)
+                data.cell.styles.textColor = [225, 29, 72];
+                data.cell.styles.fontStyle = "bold";
+              } else {
+                // Aprobado: Verde (Emerald-600)
+                data.cell.styles.textColor = [16, 149, 93];
+                data.cell.styles.fontStyle = "bold";
+              }
             }
           }
         }
@@ -316,7 +381,7 @@ export async function generarPDFCuadriculaNotas(
           data.cell.styles.halign = "right";
         }
         if (colIdx === defColIndex) {
-          const rawVal = parseFloat(String(data.cell.raw));
+          const rawVal = parseFloat(cellText);
           if (!isNaN(rawVal)) {
             if (rawVal <= datos.escala.bajoMax) {
               data.cell.styles.textColor = [225, 29, 72];
@@ -329,7 +394,90 @@ export async function generarPDFCuadriculaNotas(
     },
   });
 
-  // 5. NUMERACIÓN DE PÁGINAS EN EL PIE (Pagina X de Y)
+  // 5. TABLA DE NOVEDADES Y OBSERVACIONES (Al final del documento)
+  const estudiantesConNovedad = datos.estudiantes.filter(
+    (e) => (e.estado && e.estado !== "activo") || (e.observaciones && e.observaciones.trim() !== "")
+  );
+
+  if (estudiantesConNovedad.length > 0) {
+    const finalY = (doc as any).lastAutoTable.finalY + 8;
+
+    // Verificar si queda suficiente espacio en la página o crear una nueva
+    if (finalY + 30 > pageHeight - 15) {
+      doc.addPage();
+      currentY = 15;
+    } else {
+      currentY = finalY;
+    }
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.setTextColor(15, 23, 42); // Slate-900
+    doc.text("NOVEDADES Y OBSERVACIONES DEL CORTE", marginLeft, currentY);
+
+    currentY += 3;
+
+    const novedadesHead = [
+      ["#", "Identificacion", "Estudiante", "Estado", "Observaciones y Justificacion"],
+    ];
+
+    const novedadesBody = estudiantesConNovedad.map((est, idx) => {
+      let estadoTexto = "Activo";
+      if (est.estado === "retirado") estadoTexto = "Retirado";
+      else if (est.estado === "desertor") estadoTexto = "Desertor";
+
+      return [
+        String(idx + 1),
+        est.identificacion,
+        est.nombreCompleto,
+        estadoTexto,
+        est.observaciones?.trim() || "Sin observaciones adicionales registradas.",
+      ];
+    });
+
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: marginLeft, right: marginRight },
+      head: novedadesHead,
+      body: novedadesBody,
+      theme: "striped",
+      headStyles: {
+        fillColor: [51, 65, 85], // Slate-700
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 7.5,
+        cellPadding: 2,
+      },
+      bodyStyles: {
+        fontSize: 7.5,
+        textColor: [30, 41, 59],
+        cellPadding: 2,
+        overflow: "linebreak",
+      },
+      alternateRowStyles: {
+        fillColor: [248, 250, 252],
+      },
+      columnStyles: {
+        0: { cellWidth: 8, halign: "center" },
+        1: { cellWidth: 26, halign: "center" },
+        2: { cellWidth: 52, halign: "left", fontStyle: "bold" },
+        3: { cellWidth: 24, halign: "center", fontStyle: "bold" },
+        4: { cellWidth: "auto", halign: "left" }, // Ancho flexible de texto con linebreak
+      },
+      didParseCell: (data) => {
+        if (data.section === "body" && data.column.index === 3) {
+          const val = String(data.cell.raw ?? "");
+          if (val === "Retirado") {
+            data.cell.styles.textColor = [234, 88, 12]; // Naranja
+          } else if (val === "Desertor") {
+            data.cell.styles.textColor = [147, 51, 234]; // Púrpura
+          }
+        }
+      },
+    });
+  }
+
+  // 6. NUMERACIÓN DE PÁGINAS EN EL PIE (Pagina X de Y)
   const totalPages = doc.getNumberOfPages();
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
@@ -351,7 +499,7 @@ export async function generarPDFCuadriculaNotas(
     doc.text(paginaTexto, pageWidth - marginRight - paginaAncho, pageHeight - 5);
   }
 
-  // 6. DESCARGA AUTOMÁTICA EN EL NAVEGADOR
+  // 7. DESCARGA AUTOMÁTICA EN EL NAVEGADOR
   const sanitize = (str: string) => str.replace(/[^a-zA-Z0-9_-]/g, "_");
   const nombreLimpio = sanitize(datos.asignatura.nombre || "Asignatura");
   const filename = `Cuadricula_Notas_${nombreLimpio}_Corte${datos.numeroCorte}.pdf`;

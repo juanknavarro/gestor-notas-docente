@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect, memo } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
-import { db, type Actividad, ESCALA_DEFAULT } from "@/lib/db";
+import { db, type Actividad, type Estudiante, type EstadoEstudiante, ESCALA_DEFAULT } from "@/lib/db";
 import {
   calcularDefinitivaCorte,
   calcularDetalleDefinitivaCorte,
@@ -42,6 +42,8 @@ import {
   Lock,
   Unlock,
   Search,
+  UserCog,
+  MessageSquare,
 } from "lucide-react";
 
 interface BadgeDefinitivaAnimadaProps {
@@ -144,6 +146,12 @@ export function VistaCorte({
   const [isExportingPDF, setIsExportingPDF] = useState(false);
   const [modalImportacionAbierto, setModalImportacionAbierto] = useState(false);
   const [resultadoModal, setResultadoModal] = useState<ResultadoImportacionExcel | null>(null);
+
+  // Estados para Modal de Trazabilidad de Estudiantes (Retiro / Deserción / Observaciones)
+  const [estudianteParaTrazabilidad, setEstudianteParaTrazabilidad] = useState<Estudiante | null>(null);
+  const [trazabilidadEstado, setTrazabilidadEstado] = useState<EstadoEstudiante>("activo");
+  const [trazabilidadObservaciones, setTrazabilidadObservaciones] = useState("");
+  const [isSavingTrazabilidad, setIsSavingTrazabilidad] = useState(false);
 
   // Estados para Menú Desplegable de Informes Institucionales
   const [dropdownInformesAbierto, setDropdownInformesAbierto] = useState(false);
@@ -557,6 +565,36 @@ export function VistaCorte({
           prevInput.select?.();
         }
       }
+    }
+  };
+
+  // Apertura y guardado de Trazabilidad del Estudiante
+  const handleAbrirTrazabilidad = (estudiante: Estudiante) => {
+    setEstudianteParaTrazabilidad(estudiante);
+    setTrazabilidadEstado(estudiante.estado || "activo");
+    setTrazabilidadObservaciones(estudiante.observaciones || "");
+  };
+
+  const handleCerrarTrazabilidad = () => {
+    if (isSavingTrazabilidad) return;
+    setEstudianteParaTrazabilidad(null);
+  };
+
+  const handleGuardarTrazabilidad = async () => {
+    if (!estudianteParaTrazabilidad?.id) return;
+    try {
+      setIsSavingTrazabilidad(true);
+      await db.estudiantes.update(estudianteParaTrazabilidad.id, {
+        estado: trazabilidadEstado,
+        observaciones: trazabilidadObservaciones.trim(),
+        fechaEstado: new Date().toISOString(),
+      });
+      setEstudianteParaTrazabilidad(null);
+    } catch (err) {
+      console.error("Error al actualizar estado del estudiante:", err);
+      alert("No se pudo actualizar el estado del estudiante.");
+    } finally {
+      setIsSavingTrazabilidad(false);
     }
   };
 
@@ -1443,7 +1481,9 @@ export function VistaCorte({
                   return (
                     <tr
                       key={estudiante.id}
-                      className="hover:bg-zinc-50/60 dark:hover:bg-zinc-800/20 transition-colors group"
+                      className={`hover:bg-zinc-50/60 dark:hover:bg-zinc-800/20 transition-colors group ${
+                        estudiante.estado === "retirado" ? "opacity-70" : ""
+                      }`}
                     >
                       {/* Sticky 1: # */}
                       <td className="sticky left-0 z-10 w-12 min-w-[48px] max-w-[48px] px-3 py-2.5 text-center font-mono text-zinc-400 dark:text-zinc-500 bg-white group-hover:bg-zinc-50/60 dark:bg-zinc-900 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800">
@@ -1455,11 +1495,67 @@ export function VistaCorte({
                         {estudiante.identificacion}
                       </td>
 
-                      {/* Sticky 3: Nombre Completo */}
+                      {/* Sticky 3: Nombre Completo + Gatillo de Trazabilidad */}
                       <td className="sticky left-[178px] z-10 min-w-[200px] px-4 py-2.5 font-medium text-zinc-900 dark:text-zinc-100 bg-white group-hover:bg-zinc-50/60 dark:bg-zinc-900 dark:group-hover:bg-zinc-800/40 border-r border-zinc-200 dark:border-zinc-800 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] dark:shadow-[2px_0_5px_-2px_rgba(0,0,0,0.5)]">
-                        <span className="truncate block max-w-[220px]">
-                          {estudiante.nombreCompleto}
-                        </span>
+                        <div className="flex items-center justify-between gap-1.5 w-full">
+                          <span
+                            className={`truncate flex-1 max-w-[170px] ${
+                              estudiante.estado === "retirado"
+                                ? "line-through text-zinc-400 dark:text-zinc-500"
+                                : ""
+                            }`}
+                            title={estudiante.nombreCompleto}
+                          >
+                            {estudiante.nombreCompleto}
+                          </span>
+
+                          {/* Indicador / Gatillo de Trazabilidad */}
+                          {estudiante.estado === "retirado" ? (
+                            <button
+                              type="button"
+                              onClick={() => handleAbrirTrazabilidad(estudiante)}
+                              title={
+                                estudiante.observaciones
+                                  ? `Retirado: "${estudiante.observaciones}" (Clic para editar)`
+                                  : "Estudiante Retirado (Clic para editar)"
+                              }
+                              className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-300 shrink-0 cursor-pointer hover:ring-1 hover:ring-orange-400 transition-all"
+                            >
+                              Retirado
+                            </button>
+                          ) : estudiante.estado === "desertor" ? (
+                            <button
+                              type="button"
+                              onClick={() => handleAbrirTrazabilidad(estudiante)}
+                              title={
+                                estudiante.observaciones
+                                  ? `Desertor: "${estudiante.observaciones}" (Clic para editar)`
+                                  : "Estudiante Desertor (Clic para editar)"
+                              }
+                              className="px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider bg-purple-100 text-purple-700 dark:bg-purple-900/50 dark:text-purple-300 shrink-0 cursor-pointer hover:ring-1 hover:ring-purple-400 transition-all"
+                            >
+                              Desertor
+                            </button>
+                          ) : estudiante.observaciones ? (
+                            <button
+                              type="button"
+                              onClick={() => handleAbrirTrazabilidad(estudiante)}
+                              title={`Observación: "${estudiante.observaciones}" (Clic para editar)`}
+                              className="p-1 rounded text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 shrink-0 cursor-pointer transition-colors"
+                            >
+                              <MessageSquare className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-400" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleAbrirTrazabilidad(estudiante)}
+                              title="Gestionar estado u observaciones del estudiante"
+                              className="p-1 rounded text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 shrink-0 opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity"
+                            >
+                              <UserCog className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </td>
 
                       {/* Celdas de Calificación por Actividad (Mejoras 2 y 3) */}
@@ -1715,6 +1811,101 @@ export function VistaCorte({
                 className="px-4 py-2 bg-zinc-900 hover:bg-zinc-800 text-white dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 font-medium text-xs rounded-xl transition-colors shadow-2xs"
               >
                 Listo
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. Modal de Trazabilidad del Estudiante (Retiro / Deserción / Observaciones) */}
+      {estudianteParaTrazabilidad && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl max-w-md w-full p-6 shadow-xl space-y-5 animate-in zoom-in-95 duration-150">
+            {/* Cabecera del Modal */}
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-200 dark:border-zinc-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                  <UserCog className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-zinc-900 dark:text-zinc-50 text-sm">
+                    Trazabilidad del Estudiante
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[260px]">
+                    {estudianteParaTrazabilidad.nombreCompleto} ({estudianteParaTrazabilidad.identificacion})
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCerrarTrazabilidad}
+                disabled={isSavingTrazabilidad}
+                className="p-1 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:text-zinc-200 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                title="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Formulario */}
+            <div className="space-y-4">
+              {/* Selector de Estado */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
+                  Estado en la Asignatura
+                </label>
+                <select
+                  value={trazabilidadEstado}
+                  onChange={(e) => setTrazabilidadEstado(e.target.value as EstadoEstudiante)}
+                  className="w-full text-xs px-3 py-2 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors"
+                >
+                  <option value="activo">Activo (Cursando normalmente)</option>
+                  <option value="retirado">Retirado (Cancelación oficial de matrícula)</option>
+                  <option value="desertor">Desertor (Abandono informal / No asiste)</option>
+                </select>
+                <p className="text-[11px] text-zinc-400 dark:text-zinc-500 mt-1">
+                  {trazabilidadEstado === "retirado" &&
+                    "El estudiante se atenúa en la cuadrícula y se excluye del promedio del grupo."}
+                  {trazabilidadEstado === "desertor" &&
+                    "Permite justificar la inasistencia o baja calificación en los reportes oficiales."}
+                  {trazabilidadEstado === "activo" &&
+                    "El estudiante participa con normalidad en todas las evaluaciones y reportes."}
+                </p>
+              </div>
+
+              {/* Textarea de Observaciones */}
+              <div>
+                <label className="block text-xs font-medium text-zinc-700 dark:text-zinc-300 mb-1.5">
+                  Observaciones y Justificación
+                </label>
+                <textarea
+                  rows={4}
+                  value={trazabilidadObservaciones}
+                  onChange={(e) => setTrazabilidadObservaciones(e.target.value)}
+                  placeholder="Ej: Radicó cancelación oficial ante secretaría académica el 15/10. / Dejó de asistir desde la semana 4 sin previo aviso..."
+                  className="w-full text-xs p-3 rounded-lg bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-700 text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-500 focus:outline-none focus:border-zinc-400 dark:focus:border-zinc-500 transition-colors resize-none"
+                />
+              </div>
+            </div>
+
+            {/* Acciones */}
+            <div className="pt-3 border-t border-zinc-200 dark:border-zinc-800 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={handleCerrarTrazabilidad}
+                disabled={isSavingTrazabilidad}
+                className="px-3 py-1.5 text-xs font-medium text-zinc-700 hover:text-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleGuardarTrazabilidad}
+                disabled={isSavingTrazabilidad}
+                className="px-4 py-1.5 text-xs font-medium text-white bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 dark:text-zinc-900 rounded-lg transition-colors shadow-2xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isSavingTrazabilidad && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>Guardar Cambios</span>
               </button>
             </div>
           </div>
